@@ -132,19 +132,19 @@ Adicione ao crontab (`crontab -e`):
 
 ```cron
 # Arquiva gravações antigas do SSD para HD (a cada hora)
-0 * * * * /path/to/scripts/frigate-archive.sh >> /var/log/frigate-archive.log 2>&1
+20 3 * * * /usr/local/sbin/frigate-mover.sh >> /var/log/frigate/frigate-mover.log 2>&1
 
 # Limpa HD quando espaço livre < 15% (diário às 3h)
-0 3 * * * /path/to/scripts/frigate-prune-hd.sh
+10 * * * * /usr/local/sbin/frigate-prune-hd.sh
 
 # Remove clips antigos (diário às 4h)
-0 4 * * * /path/to/scripts/frigate-retention.sh
+20 3 * * * /usr/local/sbin/frigate-retention.sh
 
 # Watchdog do SSD - verifica a cada minuto
-* * * * * /path/to/scripts/hd-watchdog-min.sh
+* * * * * /usr/local/sbin/hd-watchdog-min.sh
 
 # Vacuum de emergência (a cada 6 horas)
-0 */6 * * * /path/to/scripts/frigate-vacuum.sh >> /var/log/frigate-vacuum.log 2>&1
+*/15 * * * * /usr/local/sbin/frigate-vacuum.sh >> /var/log/frigate/frigate-vacuum.log 2>&1
 ```
 
 ## 📊 Logs
