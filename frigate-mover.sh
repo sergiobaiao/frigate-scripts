@@ -2,10 +2,11 @@
 # =============================================================================
 # FRIGATE-MOVER.SH
 # =============================================================================
-# Script unificado para movimentação de gravações do SSD para o HD externo.
+# Script unificado para movimentação de gravações, clips, exports e snapshots
+# do SSD para o HD externo.
 #
 # DESCRIÇÃO:
-#   Este script consolida as funcionalidades de arquivamento de gravações
+#   Este script consolida as funcionalidades de arquivamento de mídia
 #   em um único utilitário com diferentes modos de operação.
 #
 # MODOS DE OPERAÇÃO:
@@ -29,6 +30,7 @@
 # OPÇÕES:
 #   --mode=MODE     Modo de operação (incremental|file|full|emergency)
 #   --dry-run       Simula as operações sem executar
+#   --progress      Mostra progresso em tempo real do rsync
 #   --verbose       Mostra mais detalhes durante execução
 #   --status        Mostra estatísticas de espaço e sai
 #   --help          Mostra esta ajuda
@@ -52,15 +54,22 @@ LOG_TAG="mover"
 MODE="incremental"           # Modo padrão
 DRY_RUN="${DRY_RUN:-0}"
 VERBOSE="${VERBOSE:-0}"
+SHOW_PROGRESS="${SHOW_PROGRESS:-0}"
 
 # Configurações do .env com valores padrão
 KEEP_SSD_DAYS="${KEEP_SSD_DAYS:-2}"
 BWLIMIT="${BWLIMIT:-20000}"
 MAX_DAYS_PER_RUN="${MAX_DAYS_PER_RUN:-30}"
 
-# Caminhos
-ORIGEM="$SSD_RECORDINGS"
-DESTINO="$HD_RECORDINGS"
+# Caminhos (resolve symlinks para que find funcione corretamente)
+ORIGEM_RECORDINGS="$(readlink -f "$SSD_RECORDINGS")"
+DESTINO_RECORDINGS="$(readlink -f "$HD_RECORDINGS")"
+ORIGEM_CLIPS="$(readlink -f "$SSD_CLIPS")"
+DESTINO_CLIPS="$(readlink -f "$HD_CLIPS")"
+ORIGEM_EXPORTS="$(readlink -f "$SSD_EXPORTS")"
+DESTINO_EXPORTS="$(readlink -f "$HD_EXPORTS")"
+ORIGEM_SNAPSHOTS="$(readlink -f "$SSD_SNAPSHOTS")"
+DESTINO_SNAPSHOTS="$(readlink -f "$HD_SNAPSHOTS")"
 LOG_FILE="$LOG_MOVER"
 
 # -----------------------------------------------------------------------------
@@ -72,7 +81,7 @@ show_help() {
     cat << 'EOF'
 Uso: frigate-mover.sh [OPÇÕES]
 
-Script unificado para movimentação de gravações do Frigate.
+Script unificado para movimentação de recordings, clips, exports e snapshots do Frigate.
 
 MODOS:
   --mode=incremental   Move diretórios de data mais antigos que KEEP_SSD_DAYS
@@ -89,6 +98,7 @@ MODOS:
 
 OPÇÕES:
   --dry-run            Simula as operações sem executar
+  --progress           Mostra progresso em tempo real do rsync
   --verbose, -v        Mostra mais detalhes durante execução
   --status             Mostra estatísticas de espaço e sai
   --help, -h           Mostra esta ajuda
@@ -97,6 +107,7 @@ EXEMPLOS:
   frigate-mover.sh                          # Modo incremental (padrão)
   frigate-mover.sh --mode=full              # Move tudo
   frigate-mover.sh --mode=incremental -v    # Incremental com detalhes
+  frigate-mover.sh --mode=full --progress   # Full com progresso do rsync
   frigate-mover.sh --dry-run                # Apenas simula
 
 CONFIGURAÇÕES (.env):
@@ -126,7 +137,7 @@ show_status() {
         
         # Conta diretórios de data no SSD
         local ssd_days
-        ssd_days=$(find "$ORIGEM" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+        ssd_days=$(find "$ORIGEM_RECORDINGS" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
         echo "   Dias de gravação: $ssd_days"
     else
         echo "📁 SSD: Não encontrado em $SSD_ROOT"
@@ -145,7 +156,7 @@ show_status() {
         
         # Conta diretórios de data no HD
         local hd_days
-        hd_days=$(find "$DESTINO" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+        hd_days=$(find "$DESTINO_RECORDINGS" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
         echo "   Dias de gravação: $hd_days"
     else
         echo "💾 HD Externo: Não montado em $HD_MOUNT"
@@ -164,7 +175,134 @@ show_status() {
 # Log condicional baseado no modo verbose
 # -----------------------------------------------------------------------------
 vlog() {
-    [[ "$VERBOSE" == "1" ]] && log "$LOG_TAG" "$@"
+    if [[ "$VERBOSE" == "1" ]]; then
+        log "$LOG_TAG" "$@"
+    fi
+    return 0
+}
+
+# -----------------------------------------------------------------------------
+# FUNÇÃO: run_rsync
+# -----------------------------------------------------------------------------
+# Executa rsync com flags de progresso opcionais.
+# -----------------------------------------------------------------------------
+run_rsync() {
+    if [[ "$SHOW_PROGRESS" == "1" ]]; then
+        rsync --human-readable --info=progress2 "$@"
+    else
+        rsync "$@"
+    fi
+}
+
+# -----------------------------------------------------------------------------
+# FUNÇÃO: move_media_before_date
+# -----------------------------------------------------------------------------
+# Move arquivos de uma mídia que sejam mais antigos que a data de corte.
+# -----------------------------------------------------------------------------
+move_media_before_date() {
+    local label="$1"
+    local src="$2"
+    local dst="$3"
+    local cutoff_date="$4"
+
+    local processed=0
+    local moved=0
+    local total=0
+    local file rel_path dest_file dest_dir
+    local progress_step="${MEDIA_PROGRESS_STEP:-${CLIPS_PROGRESS_STEP:-500}}"
+    local remaining=0
+
+    [[ -d "$src" ]] || {
+        log "$LOG_TAG" "Diretório $label não existe, pulando: $src"
+        return 0
+    }
+
+    total=$(find "$src" -type f ! -newermt "${cutoff_date} 00:00:00" -printf . 2>/dev/null | wc -c)
+    log "$LOG_TAG" "Iniciando etapa de $label (corte: < ${cutoff_date}, candidatos=${total})"
+
+    while IFS= read -r -d '' file; do
+        rel_path="${file#$src/}"
+        dest_file="$dst/$rel_path"
+        dest_dir="$(dirname "$dest_file")"
+        ((++processed))
+
+        if [[ "$DRY_RUN" == "1" ]]; then
+            vlog "[DRY-RUN] Moveria $label: $rel_path"
+        else
+            mkdir -p "$dest_dir"
+            chown "${FRIGATE_UID}:${FRIGATE_GID}" "$dest_dir"
+
+            if run_rsync -a --chown="${FRIGATE_UID}:${FRIGATE_GID}" \
+                --remove-source-files "$file" "$dest_file"; then
+                ((++moved))
+                vlog "$label movido: $rel_path"
+            else
+                log "$LOG_TAG" "ERRO ao mover $label: $rel_path"
+            fi
+        fi
+
+        if (( processed % progress_step == 0 )); then
+            remaining=$((total - processed))
+            (( remaining < 0 )) && remaining=0
+            if [[ "$DRY_RUN" == "1" ]]; then
+                log "$LOG_TAG" "Progresso $label: processados=$processed restante=$remaining"
+            else
+                log "$LOG_TAG" "Progresso $label: processados=$processed movidos=$moved restante=$remaining"
+            fi
+        fi
+    done < <(find "$src" -type f ! -newermt "${cutoff_date} 00:00:00" -print0 2>/dev/null)
+
+    if [[ "$DRY_RUN" == "1" ]]; then
+        log "$LOG_TAG" "${label^} candidatos para mover (< ${cutoff_date}): $processed"
+    else
+        find "$src" -type d -empty -delete 2>/dev/null || true
+        log "$LOG_TAG" "${label^} concluído: $moved/$processed arquivos movidos"
+    fi
+}
+
+# -----------------------------------------------------------------------------
+# FUNÇÃO: move_media_older_than_day
+# -----------------------------------------------------------------------------
+# Move arquivos com mtime > 24h de uma mídia para outra.
+# -----------------------------------------------------------------------------
+move_media_older_than_day() {
+    local label="$1"
+    local src="$2"
+    local dst="$3"
+
+    local moved=0
+    local file rel_path dest_file dest_dir
+
+    [[ -d "$src" ]] || {
+        log "$LOG_TAG" "Diretório $label não existe, pulando: $src"
+        echo 0
+        return 0
+    }
+
+    while IFS= read -r -d '' file; do
+        rel_path="${file#$src/}"
+        dest_file="$dst/$rel_path"
+        dest_dir="$(dirname "$dest_file")"
+
+        if [[ "$DRY_RUN" == "1" ]]; then
+            log "$LOG_TAG" "[DRY-RUN] Moveria $label: $rel_path"
+        else
+            mkdir -p "$dest_dir"
+            chown "${FRIGATE_UID}:${FRIGATE_GID}" "$dest_dir"
+
+            if run_rsync -a --chown="${FRIGATE_UID}:${FRIGATE_GID}" \
+                --remove-source-files "$file" "$dest_file"; then
+                vlog "$label movido: $rel_path"
+                ((++moved))
+            fi
+        fi
+    done < <(find "$src" -type f -daystart -mtime +0 -print0 2>/dev/null)
+
+    if [[ "$DRY_RUN" != "1" ]]; then
+        find "$src" -type d -empty -delete 2>/dev/null || true
+    fi
+
+    echo "$moved"
 }
 
 # -----------------------------------------------------------------------------
@@ -173,9 +311,9 @@ vlog() {
 # Verifica pré-requisitos antes de executar
 # -----------------------------------------------------------------------------
 check_prerequisites() {
-    # Verifica se o diretório de origem existe
-    if [[ ! -d "$ORIGEM" ]]; then
-        log "$LOG_TAG" "ERRO: Diretório de origem não existe: $ORIGEM"
+    # Verifica se pelo menos um diretório de origem existe
+    if [[ ! -d "$ORIGEM_RECORDINGS" && ! -d "$ORIGEM_CLIPS" && ! -d "$ORIGEM_EXPORTS" && ! -d "$ORIGEM_SNAPSHOTS" ]]; then
+        log "$LOG_TAG" "ERRO: nenhum diretório de origem existe (recordings/clips/exports/snapshots)"
         exit 1
     fi
     
@@ -191,8 +329,11 @@ check_prerequisites() {
         exit 1
     fi
     
-    # Garante que o diretório de destino existe
-    ensure_dir "$DESTINO"
+    # Garante que os diretórios de destino existem
+    ensure_dir "$DESTINO_RECORDINGS"
+    ensure_dir "$DESTINO_CLIPS"
+    ensure_dir "$DESTINO_EXPORTS"
+    ensure_dir "$DESTINO_SNAPSHOTS"
 }
 
 # -----------------------------------------------------------------------------
@@ -201,7 +342,20 @@ check_prerequisites() {
 # Adquire o lock para operações de movimentação
 # -----------------------------------------------------------------------------
 acquire_mover_lock() {
-    exec 200>"$LOCK_STORAGE"
+    local lock_file="${LOCK_STORAGE:-/tmp/frigate-storage.lock}"
+    local fallback_lock="/tmp/frigate-storage.lock"
+
+    # Fallback automático quando /var/lock não é gravável por usuário comum.
+    if ! touch "$lock_file" 2>/dev/null; then
+        lock_file="$fallback_lock"
+        touch "$lock_file" || {
+            log "$LOG_TAG" "ERRO: não foi possível criar lock em $fallback_lock"
+            exit 1
+        }
+        vlog "Aviso: usando lock fallback em $fallback_lock"
+    fi
+    exec 200>"$lock_file"
+
     if ! flock -n 200; then
         log "$LOG_TAG" "Lock ocupado por outro processo"
         exit 0
@@ -227,10 +381,18 @@ mode_incremental() {
     # Lista diretórios de data
     local days
     mapfile -t days < <(
-        find "$ORIGEM" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' \
+        find "$ORIGEM_RECORDINGS" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' \
         | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' \
         | sort
     )
+
+    if (( ${#days[@]} == 0 )); then
+        log "$LOG_TAG" "Datas encontradas: nenhuma"
+    else
+        local days_list
+        days_list="$(IFS=', '; echo "${days[*]}")"
+        log "$LOG_TAG" "Datas encontradas (${#days[@]}): $days_list"
+    fi
     
     local processed=0
     local moved=0
@@ -246,23 +408,26 @@ mode_incremental() {
         [[ "$day" < "$keep_from" ]] || continue
         
         vlog "Processando: $day"
-        ((processed++))
+        ((++processed))
         
         if [[ "$DRY_RUN" == "1" ]]; then
-            log "$LOG_TAG" "[DRY-RUN] Moveria: $ORIGEM/$day -> $DESTINO/$day"
+            log "$LOG_TAG" "[DRY-RUN] Moveria recordings: $ORIGEM_RECORDINGS/$day -> $DESTINO_RECORDINGS/$day"
         else
-            if rsync -a --chown="${FRIGATE_UID}:${FRIGATE_GID}" \
-                "$ORIGEM/$day/" "$DESTINO/$day/"; then
-                rm -rf "$ORIGEM/$day"
-                ((moved++))
+            if run_rsync -a --chown="${FRIGATE_UID}:${FRIGATE_GID}" \
+                "$ORIGEM_RECORDINGS/$day/" "$DESTINO_RECORDINGS/$day/"; then
+                rm -rf "$ORIGEM_RECORDINGS/$day"
+                ((++moved))
                 vlog "Movido: $day"
             else
-                log "$LOG_TAG" "ERRO ao mover: $day"
+                log "$LOG_TAG" "ERRO ao mover recordings: $day"
             fi
         fi
     done
     
-    log "$LOG_TAG" "Concluído: $moved/$processed dias movidos"
+    log "$LOG_TAG" "Recordings concluído: $moved/$processed dias movidos"
+    move_media_before_date "clips" "$ORIGEM_CLIPS" "$DESTINO_CLIPS" "$keep_from"
+    move_media_before_date "exports" "$ORIGEM_EXPORTS" "$DESTINO_EXPORTS" "$keep_from"
+    move_media_before_date "snapshots" "$ORIGEM_SNAPSHOTS" "$DESTINO_SNAPSHOTS" "$keep_from"
 }
 
 # -----------------------------------------------------------------------------
@@ -272,37 +437,16 @@ mode_incremental() {
 # (Lógica do antigo frigate-archiver.sh)
 # -----------------------------------------------------------------------------
 mode_file() {
-    log "$LOG_TAG" "Modo: FILE (mover arquivos > 24h)"
-    
-    local count=0
-    
-    # Busca arquivos mais antigos que 1 dia
-    find "$ORIGEM" -type f -daystart -mtime +0 -print0 | while IFS= read -r -d '' file; do
-        local rel_path="${file#$ORIGEM/}"
-        local dest_file="$DESTINO/$rel_path"
-        local dest_dir
-        dest_dir="$(dirname "$dest_file")"
-        
-        if [[ "$DRY_RUN" == "1" ]]; then
-            log "$LOG_TAG" "[DRY-RUN] Moveria: $rel_path"
-        else
-            mkdir -p "$dest_dir"
-            chown "${FRIGATE_UID}:${FRIGATE_GID}" "$dest_dir"
-            
-            if rsync -a --chown="${FRIGATE_UID}:${FRIGATE_GID}" \
-                --remove-source-files "$file" "$dest_file"; then
-                vlog "Movido: $rel_path"
-                ((count++))
-            fi
-        fi
-    done
-    
-    # Limpa diretórios vazios
-    if [[ "$DRY_RUN" != "1" ]]; then
-        find "$ORIGEM" -type d -empty -delete 2>/dev/null || true
-    fi
-    
-    log "$LOG_TAG" "Concluído: arquivos processados"
+    log "$LOG_TAG" "Modo: FILE (mover arquivos > 24h em recordings/clips/exports/snapshots)"
+
+    local rec_count clips_count exports_count snapshots_count
+
+    rec_count=$(move_media_older_than_day "recordings" "$ORIGEM_RECORDINGS" "$DESTINO_RECORDINGS")
+    clips_count=$(move_media_older_than_day "clips" "$ORIGEM_CLIPS" "$DESTINO_CLIPS")
+    exports_count=$(move_media_older_than_day "exports" "$ORIGEM_EXPORTS" "$DESTINO_EXPORTS")
+    snapshots_count=$(move_media_older_than_day "snapshots" "$ORIGEM_SNAPSHOTS" "$DESTINO_SNAPSHOTS")
+
+    log "$LOG_TAG" "Concluído: arquivos processados (recordings=$rec_count, clips=$clips_count, exports=$exports_count, snapshots=$snapshots_count)"
 }
 
 # -----------------------------------------------------------------------------
@@ -314,23 +458,77 @@ mode_file() {
 mode_full() {
     local bw="${1:-$BWLIMIT}"
     
-    log "$LOG_TAG" "Modo: FULL (mover tudo, bwlimit=${bw} KB/s)"
+    log "$LOG_TAG" "Modo: FULL (mover tudo: recordings + clips + exports + snapshots, bwlimit=${bw} KB/s)"
     
     if [[ "$DRY_RUN" == "1" ]]; then
-        log "$LOG_TAG" "[DRY-RUN] Moveria todo conteúdo de $ORIGEM para $DESTINO"
-        rsync -av --dry-run --bwlimit="$bw" "$ORIGEM/" "$DESTINO/"
+        if [[ -d "$ORIGEM_RECORDINGS" ]]; then
+            log "$LOG_TAG" "[DRY-RUN] Moveria recordings: $ORIGEM_RECORDINGS -> $DESTINO_RECORDINGS"
+            run_rsync -av --dry-run --bwlimit="$bw" "$ORIGEM_RECORDINGS/" "$DESTINO_RECORDINGS/"
+        else
+            log "$LOG_TAG" "[DRY-RUN] recordings ausente, pulando: $ORIGEM_RECORDINGS"
+        fi
+        if [[ -d "$ORIGEM_CLIPS" ]]; then
+            log "$LOG_TAG" "[DRY-RUN] Moveria clips: $ORIGEM_CLIPS -> $DESTINO_CLIPS"
+            run_rsync -av --dry-run --bwlimit="$bw" "$ORIGEM_CLIPS/" "$DESTINO_CLIPS/"
+        else
+            log "$LOG_TAG" "[DRY-RUN] clips ausente, pulando: $ORIGEM_CLIPS"
+        fi
+        if [[ -d "$ORIGEM_EXPORTS" ]]; then
+            log "$LOG_TAG" "[DRY-RUN] Moveria exports: $ORIGEM_EXPORTS -> $DESTINO_EXPORTS"
+            run_rsync -av --dry-run --bwlimit="$bw" "$ORIGEM_EXPORTS/" "$DESTINO_EXPORTS/"
+        else
+            log "$LOG_TAG" "[DRY-RUN] exports ausente, pulando: $ORIGEM_EXPORTS"
+        fi
+        if [[ -d "$ORIGEM_SNAPSHOTS" ]]; then
+            log "$LOG_TAG" "[DRY-RUN] Moveria snapshots: $ORIGEM_SNAPSHOTS -> $DESTINO_SNAPSHOTS"
+            run_rsync -av --dry-run --bwlimit="$bw" "$ORIGEM_SNAPSHOTS/" "$DESTINO_SNAPSHOTS/"
+        else
+            log "$LOG_TAG" "[DRY-RUN] snapshots ausente, pulando: $ORIGEM_SNAPSHOTS"
+        fi
     else
-        # Executa rsync com todas as opções
-        rsync -a \
-            --bwlimit="$bw" \
-            --remove-source-files \
-            --ignore-missing-args \
-            "$ORIGEM/" "$DESTINO/"
+        # Executa rsync com todas as opções para recordings
+        if [[ -d "$ORIGEM_RECORDINGS" ]]; then
+            run_rsync -a \
+                --bwlimit="$bw" \
+                --remove-source-files \
+                --ignore-missing-args \
+                "$ORIGEM_RECORDINGS/" "$DESTINO_RECORDINGS/"
+        fi
+
+        # Executa rsync com todas as opções para clips
+        if [[ -d "$ORIGEM_CLIPS" ]]; then
+            run_rsync -a \
+                --bwlimit="$bw" \
+                --remove-source-files \
+                --ignore-missing-args \
+                "$ORIGEM_CLIPS/" "$DESTINO_CLIPS/"
+        fi
+
+        # Executa rsync com todas as opções para exports
+        if [[ -d "$ORIGEM_EXPORTS" ]]; then
+            run_rsync -a \
+                --bwlimit="$bw" \
+                --remove-source-files \
+                --ignore-missing-args \
+                "$ORIGEM_EXPORTS/" "$DESTINO_EXPORTS/"
+        fi
+
+        # Executa rsync com todas as opções para snapshots
+        if [[ -d "$ORIGEM_SNAPSHOTS" ]]; then
+            run_rsync -a \
+                --bwlimit="$bw" \
+                --remove-source-files \
+                --ignore-missing-args \
+                "$ORIGEM_SNAPSHOTS/" "$DESTINO_SNAPSHOTS/"
+        fi
         
         # Limpa diretórios vazios
-        find "$ORIGEM" -type d -empty -not -path "$ORIGEM" -delete 2>/dev/null || true
+        [[ -d "$ORIGEM_RECORDINGS" ]] && find "$ORIGEM_RECORDINGS" -type d -empty -not -path "$ORIGEM_RECORDINGS" -delete 2>/dev/null || true
+        [[ -d "$ORIGEM_CLIPS" ]] && find "$ORIGEM_CLIPS" -type d -empty -not -path "$ORIGEM_CLIPS" -delete 2>/dev/null || true
+        [[ -d "$ORIGEM_EXPORTS" ]] && find "$ORIGEM_EXPORTS" -type d -empty -not -path "$ORIGEM_EXPORTS" -delete 2>/dev/null || true
+        [[ -d "$ORIGEM_SNAPSHOTS" ]] && find "$ORIGEM_SNAPSHOTS" -type d -empty -not -path "$ORIGEM_SNAPSHOTS" -delete 2>/dev/null || true
         
-        log "$LOG_TAG" "Movimentação completa concluída"
+        log "$LOG_TAG" "Movimentação completa concluída (recordings + clips + exports + snapshots)"
     fi
 }
 
@@ -354,6 +552,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         --dry-run)
             DRY_RUN=1
+            ;;
+        --progress)
+            SHOW_PROGRESS=1
             ;;
         --verbose|-v)
             VERBOSE=1

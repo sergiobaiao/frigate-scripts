@@ -196,6 +196,12 @@ get_oldest_newest_day() {
     [[ -z "$NEWEST_DAY" ]] && NEWEST_DAY="-"
 }
 
+count_files_in_dir() {
+    local dir_path="$1"
+    [[ -d "$dir_path" ]] || { echo 0; return; }
+    find "$dir_path" -type f 2>/dev/null | wc -l
+}
+
 # -----------------------------------------------------------------------------
 # FUNÇÃO: check_active_locks
 # -----------------------------------------------------------------------------
@@ -261,12 +267,16 @@ print_storage_section() {
     get_disk_info "$SSD_ROOT"
     local ssd_icon=$(get_status_icon "$DISK_USAGE")
     local ssd_days=$(count_recording_days "$SSD_RECORDINGS")
+    local ssd_clips_count=$(count_files_in_dir "$SSD_CLIPS")
+    local ssd_exports_count=$(count_files_in_dir "$SSD_EXPORTS")
+    local ssd_snapshots_count=$(count_files_in_dir "$SSD_SNAPSHOTS")
     get_oldest_newest_day "$SSD_RECORDINGS"
     
     echo "│  ${BOLD}📁 SSD${RESET} (${SSD_ROOT})"
     if [[ "$DISK_USAGE" != "-" ]]; then
         echo "│     $ssd_icon Uso: ${DISK_USAGE}% │ Total: ${DISK_TOTAL} │ Livre: ${DISK_AVAIL}"
         echo "│     📅 Dias: ${ssd_days} │ Range: ${OLDEST_DAY} → ${NEWEST_DAY}"
+        echo "│     🗂️  Clips: ${ssd_clips_count} │ Exports: ${ssd_exports_count} │ Snapshots: ${ssd_snapshots_count}"
         
         # Alerta se necessário
         if (( DISK_USAGE >= CRIT_THRESHOLD )); then
@@ -288,11 +298,15 @@ print_storage_section() {
         get_disk_info "$HD_MOUNT"
         local hd_icon=$(get_status_icon "$DISK_USAGE")
         local hd_days=$(count_recording_days "$HD_RECORDINGS")
+        local hd_clips_count=$(count_files_in_dir "$HD_CLIPS")
+        local hd_exports_count=$(count_files_in_dir "$HD_EXPORTS")
+        local hd_snapshots_count=$(count_files_in_dir "$HD_SNAPSHOTS")
         get_oldest_newest_day "$HD_RECORDINGS"
         
         echo "│  ${BOLD}💾 HD Externo${RESET} (${HD_MOUNT})"
         echo "│     $hd_icon Uso: ${DISK_USAGE}% │ Total: ${DISK_TOTAL} │ Livre: ${DISK_AVAIL}"
         echo "│     📅 Dias: ${hd_days} │ Range: ${OLDEST_DAY} → ${NEWEST_DAY}"
+        echo "│     🗂️  Clips: ${hd_clips_count} │ Exports: ${hd_exports_count} │ Snapshots: ${hd_snapshots_count}"
         
         # Alerta se necessário
         if (( DISK_USAGE >= CRIT_THRESHOLD )); then
@@ -361,6 +375,8 @@ print_config_section() {
     echo "│"
     echo "│  Manter no SSD:        ${KEEP_SSD_DAYS} dias"
     echo "│  Clips retenção:       ${CLIPS_KEEP_DAYS} dias"
+    echo "│  Snapshots retenção:   ${SNAPSHOTS_KEEP_DAYS} dias"
+    echo "│  Exports retenção:     ${EXPORTS_KEEP_DAYS} dias"
     echo "│  Espaço livre mín:     ${MIN_FREE_PCT}%"
     echo "│  Threshold emergência: ${SSD_EMERGENCY_THRESHOLD}%"
     echo "│  Limite de banda:      ${BWLIMIT} KB/s"
@@ -402,12 +418,18 @@ print_json() {
     local ssd_total="$DISK_TOTAL"
     local ssd_avail="$DISK_AVAIL"
     local ssd_days=$(count_recording_days "$SSD_RECORDINGS")
+    local ssd_clips_count=$(count_files_in_dir "$SSD_CLIPS")
+    local ssd_exports_count=$(count_files_in_dir "$SSD_EXPORTS")
+    local ssd_snapshots_count=$(count_files_in_dir "$SSD_SNAPSHOTS")
     
     local hd_mounted="false"
     local hd_usage="null"
     local hd_total="null"
     local hd_avail="null"
     local hd_days="0"
+    local hd_clips_count="0"
+    local hd_exports_count="0"
+    local hd_snapshots_count="0"
     
     if check_mountpoint "$HD_MOUNT" 2>/dev/null; then
         hd_mounted="true"
@@ -416,6 +438,9 @@ print_json() {
         hd_total="\"$DISK_TOTAL\""
         hd_avail="\"$DISK_AVAIL\""
         hd_days=$(count_recording_days "$HD_RECORDINGS")
+        hd_clips_count=$(count_files_in_dir "$HD_CLIPS")
+        hd_exports_count=$(count_files_in_dir "$HD_EXPORTS")
+        hd_snapshots_count=$(count_files_in_dir "$HD_SNAPSHOTS")
     fi
     
     local frigate_status=$(get_frigate_container_status)
@@ -428,7 +453,10 @@ print_json() {
     "usage_percent": $ssd_usage,
     "total": "$ssd_total",
     "available": "$ssd_avail",
-    "recording_days": $ssd_days
+    "recording_days": $ssd_days,
+    "clips_files": $ssd_clips_count,
+    "exports_files": $ssd_exports_count,
+    "snapshots_files": $ssd_snapshots_count
   },
   "hd": {
     "path": "$HD_MOUNT",
@@ -436,7 +464,10 @@ print_json() {
     "usage_percent": $hd_usage,
     "total": $hd_total,
     "available": $hd_avail,
-    "recording_days": $hd_days
+    "recording_days": $hd_days,
+    "clips_files": $hd_clips_count,
+    "exports_files": $hd_exports_count,
+    "snapshots_files": $hd_snapshots_count
   },
   "frigate": {
     "status": "$frigate_status"
@@ -444,6 +475,8 @@ print_json() {
   "config": {
     "keep_ssd_days": $KEEP_SSD_DAYS,
     "clips_keep_days": $CLIPS_KEEP_DAYS,
+    "snapshots_keep_days": $SNAPSHOTS_KEEP_DAYS,
+    "exports_keep_days": $EXPORTS_KEEP_DAYS,
     "min_free_pct": $MIN_FREE_PCT,
     "bwlimit_kb": $BWLIMIT
   }

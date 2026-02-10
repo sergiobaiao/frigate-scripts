@@ -48,6 +48,57 @@ if [[ -f "$ENV_LOCAL" ]]; then
 fi
 
 # -----------------------------------------------------------------------------
+# NORMALIZAÇÃO DE CAMINHOS DE MÍDIA
+# -----------------------------------------------------------------------------
+# Alguns ambientes usam layout com subdiretório "frigate" (ex:
+# /mnt/frigate-ssd/frigate/recordings). Se o caminho configurado não existir,
+# tenta automaticamente variantes comuns para manter compatibilidade.
+resolve_media_path() {
+    local configured="$1"
+    shift
+
+    if [[ -d "$configured" ]]; then
+        echo "$configured"
+        return
+    fi
+
+    local candidate
+    for candidate in "$@"; do
+        if [[ -d "$candidate" ]]; then
+            echo "$candidate"
+            return
+        fi
+    done
+
+    echo "$configured"
+}
+
+SSD_RECORDINGS="$(resolve_media_path "$SSD_RECORDINGS" \
+    "${SSD_ROOT}/frigate/recordings" \
+    "${SSD_ROOT}/recordings")"
+SSD_CLIPS="$(resolve_media_path "$SSD_CLIPS" \
+    "${SSD_ROOT}/frigate/clips" \
+    "${SSD_ROOT}/clips")"
+SSD_EXPORTS="$(resolve_media_path "${SSD_EXPORTS:-${SSD_ROOT}/exports}" \
+    "${SSD_ROOT}/frigate/exports" \
+    "${SSD_ROOT}/exports")"
+SSD_SNAPSHOTS="$(resolve_media_path "${SSD_SNAPSHOTS:-${SSD_ROOT}/snapshots}" \
+    "${SSD_ROOT}/frigate/snapshots" \
+    "${SSD_ROOT}/snapshots")"
+HD_RECORDINGS="$(resolve_media_path "$HD_RECORDINGS" \
+    "${HD_MOUNT}/frigate/recordings" \
+    "${HD_MOUNT}/recordings")"
+HD_CLIPS="$(resolve_media_path "$HD_CLIPS" \
+    "${HD_MOUNT}/frigate/clips" \
+    "${HD_MOUNT}/clips")"
+HD_EXPORTS="$(resolve_media_path "${HD_EXPORTS:-${HD_MOUNT}/exports}" \
+    "${HD_MOUNT}/frigate/exports" \
+    "${HD_MOUNT}/exports")"
+HD_SNAPSHOTS="$(resolve_media_path "${HD_SNAPSHOTS:-${HD_MOUNT}/snapshots}" \
+    "${HD_MOUNT}/frigate/snapshots" \
+    "${HD_MOUNT}/snapshots")"
+
+# -----------------------------------------------------------------------------
 # FUNÇÃO: log
 # -----------------------------------------------------------------------------
 # Imprime mensagem de log formatada com timestamp ISO 8601
@@ -468,4 +519,3 @@ get_install_command() {
         *)          echo "Verifique a documentação do pacote" ;;
     esac
 }
-

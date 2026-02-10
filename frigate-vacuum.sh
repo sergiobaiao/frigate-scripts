@@ -63,17 +63,19 @@ usage_pct() {
 }
 
 # -----------------------------------------------------------------------------
-# CONFIGURAÇÃO DO DIRETÓRIO DE GRAVAÇÕES
+# CONFIGURAÇÃO DOS DIRETÓRIOS DE MÍDIA
 # -----------------------------------------------------------------------------
-# Nota: Este caminho usa /frigate/recordings (diferente de alguns outros scripts)
-# TODO: Considerar unificar com HD_RECORDINGS do .env
-DEST_REC="$HD_MOUNT/frigate/recordings"
+DATE_RE='^20[0-9]{2}-[0-9]{2}-[0-9]{2}$'
 
-# Verifica se o diretório existe
-if [[ ! -d "$DEST_REC" ]]; then
-    log_simple "$LOG_TAG" "Diretório de gravações não existe: $DEST_REC"
-    exit 0
-fi
+date_dirs_for_media() {
+    local root="$1"
+    local media="$2"
+    [[ -d "$root" ]] || return 0
+
+    find "$root" -mindepth 1 -maxdepth 2 -type d -printf '%p\n' 2>/dev/null \
+        | awk -F/ -v re="$DATE_RE" -v media="$media" '$NF ~ re {printf "%s\t%s\t%s\n", $NF, media, $0}' \
+        | sort
+}
 
 # -----------------------------------------------------------------------------
 # VERIFICAÇÃO INICIAL
@@ -86,22 +88,23 @@ log_simple "$LOG_TAG" "Uso atual: ${current_usage}% (limite: ${THRESHOLD}%)"
 # -----------------------------------------------------------------------------
 # Continua removendo dias antigos enquanto o uso estiver acima do threshold
 while [[ "$(usage_pct)" -ge "$THRESHOLD" ]]; do
-    # Busca o diretório de data mais antigo
-    # -mindepth 1 -maxdepth 1: Apenas primeiro nível (diretórios de data)
-    # -printf '%f\n': Imprime apenas o nome do diretório (sem caminho)
-    # sort: Ordena alfabeticamente (funciona para datas ISO)
-    # head -n1: Pega o primeiro (mais antigo)
-    day=$(find "$DEST_REC" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | head -n1)
-    
-    # Se não encontrou nenhum diretório, sai do loop
-    if [[ -z "$day" ]]; then
-        log_simple "$LOG_TAG" "Nenhum diretório de data encontrado para remover"
+    oldest_entry="$(
+        {
+            date_dirs_for_media "$HD_RECORDINGS" "recordings"
+            date_dirs_for_media "$HD_CLIPS" "clips"
+            date_dirs_for_media "$HD_EXPORTS" "exports"
+            date_dirs_for_media "$HD_SNAPSHOTS" "snapshots"
+        } | sort | head -n1
+    )"
+
+    if [[ -z "$oldest_entry" ]]; then
+        log_simple "$LOG_TAG" "Nenhum diretório de data encontrado para remover (recordings/clips/exports/snapshots)"
         break
     fi
-    
-    # Remove o diretório mais antigo
-    log_simple "$LOG_TAG" "Removendo dia: $day"
-    rm -rf "$DEST_REC/$day"
+
+    IFS=$'\t' read -r day media oldest_path <<< "$oldest_entry"
+    log_simple "$LOG_TAG" "Removendo dia: $day ($media) em $oldest_path"
+    rm -rf "$oldest_path"
     
     # Mostra o novo uso após remoção
     new_usage=$(usage_pct)

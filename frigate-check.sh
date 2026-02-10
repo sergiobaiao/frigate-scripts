@@ -208,12 +208,54 @@ check_directories() {
     else
         check_warn "SSD Recordings: $SSD_RECORDINGS não existe"
     fi
+
+    if [[ -d "$SSD_CLIPS" ]]; then
+        check_ok "SSD Clips: $SSD_CLIPS"
+    else
+        check_warn "SSD Clips: $SSD_CLIPS não existe"
+    fi
+
+    if [[ -d "$SSD_EXPORTS" ]]; then
+        check_ok "SSD Exports: $SSD_EXPORTS"
+    else
+        check_warn "SSD Exports: $SSD_EXPORTS não existe"
+    fi
+
+    if [[ -d "$SSD_SNAPSHOTS" ]]; then
+        check_ok "SSD Snapshots: $SSD_SNAPSHOTS"
+    else
+        check_warn "SSD Snapshots: $SSD_SNAPSHOTS não existe"
+    fi
     
     # HD Mount
     if [[ -d "$HD_MOUNT" ]]; then
         check_ok "HD Mount: $HD_MOUNT"
     else
         check_warn "HD Mount: $HD_MOUNT não existe"
+    fi
+
+    if [[ -d "$HD_RECORDINGS" ]]; then
+        check_ok "HD Recordings: $HD_RECORDINGS"
+    else
+        check_warn "HD Recordings: $HD_RECORDINGS não existe"
+    fi
+
+    if [[ -d "$HD_CLIPS" ]]; then
+        check_ok "HD Clips: $HD_CLIPS"
+    else
+        check_warn "HD Clips: $HD_CLIPS não existe"
+    fi
+
+    if [[ -d "$HD_EXPORTS" ]]; then
+        check_ok "HD Exports: $HD_EXPORTS"
+    else
+        check_warn "HD Exports: $HD_EXPORTS não existe"
+    fi
+
+    if [[ -d "$HD_SNAPSHOTS" ]]; then
+        check_ok "HD Snapshots: $HD_SNAPSHOTS"
+    else
+        check_warn "HD Snapshots: $HD_SNAPSHOTS não existe"
     fi
     
     # Log directory

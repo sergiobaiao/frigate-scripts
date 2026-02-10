@@ -2,16 +2,15 @@
 # =============================================================================
 # FRIGATE-RETENTION.SH
 # =============================================================================
-# Gerencia a retenção de clips (snapshots de eventos) do Frigate.
+# Gerencia a retenção de clips, snapshots e exports do Frigate.
 #
 # DESCRIÇÃO:
-#   Este script implementa a política de retenção para os clips do Frigate.
-#   Clips são imagens/vídeos curtos de eventos detectados (pessoas, carros, etc.)
-#   que são armazenados separadamente das gravações contínuas.
+#   Este script implementa a política de retenção para mídias de evento
+#   (clips, snapshots e exports) do Frigate.
 #
 # FUNCIONAMENTO:
 #   1. Para cada local de armazenamento (SSD e HD):
-#      a. Busca arquivos de clips mais antigos que CLIPS_KEEP_DAYS
+#      a. Busca arquivos mais antigos que o período de retenção configurado
 #      b. Remove esses arquivos
 #      c. Limpa diretórios vazios
 #
@@ -19,7 +18,9 @@
 #   ./frigate-retention.sh
 #
 # CONFIGURAÇÕES (via .env):
-#   CLIPS_KEEP_DAYS - Dias para manter clips (padrão: 2)
+#   CLIPS_KEEP_DAYS      - Dias para manter clips (padrão: 2)
+#   SNAPSHOTS_KEEP_DAYS  - Dias para manter snapshots (padrão: 2)
+#   EXPORTS_KEEP_DAYS    - Dias para manter exports (padrão: 30)
 #
 # LOGS:
 #   As operações são registradas em /var/log/frigate-retention.log
@@ -38,21 +39,30 @@ LOG_TAG="retention"
 # -----------------------------------------------------------------------------
 # CONFIGURAÇÃO DE LOGS
 # -----------------------------------------------------------------------------
-# Garante que os diretórios necessários existem
-ensure_dir "$LOCK_DIR"
-ensure_dir "$(dirname "$LOG_RETENTION")"
+# Resolve lock com fallback para /tmp
+LOCK_FILE="${LOCK_MEDIA:-/tmp/frigate-media.lock}"
+if ! mkdir -p "$(dirname "$LOCK_FILE")" 2>/dev/null || ! touch "$LOCK_FILE" 2>/dev/null; then
+    LOCK_FILE="/tmp/frigate-media.lock"
+    mkdir -p "$(dirname "$LOCK_FILE")"
+    touch "$LOCK_FILE"
+fi
 
-# Cria o arquivo de log se não existir
-touch "$LOG_RETENTION"
+# Resolve log com fallback para /tmp
+LOG_FILE="${LOG_RETENTION:-/tmp/frigate-retention.log}"
+if ! mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || ! touch "$LOG_FILE" 2>/dev/null; then
+    LOG_FILE="/tmp/frigate-retention.log"
+    mkdir -p "$(dirname "$LOG_FILE")"
+    touch "$LOG_FILE"
+fi
 
 # Redireciona toda a saída para o arquivo de log (modo append)
-exec >>"$LOG_RETENTION" 2>&1
+exec >>"$LOG_FILE" 2>&1
 
 # -----------------------------------------------------------------------------
 # AQUISIÇÃO DO LOCK
 # -----------------------------------------------------------------------------
 # Usa o mesmo lock dos scripts de mídia para evitar conflitos
-exec 9>"$LOCK_MEDIA"
+exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
     log "$LOG_TAG" "Lock ocupado por outro processo, saindo."
     exit 0
@@ -61,43 +71,36 @@ fi
 # -----------------------------------------------------------------------------
 # INÍCIO DO PROCESSAMENTO
 # -----------------------------------------------------------------------------
-log "$LOG_TAG" "Iniciando limpeza de clips (retenção: ${CLIPS_KEEP_DAYS} dias)"
+log "$LOG_TAG" "Iniciando limpeza de mídia de evento (clips/snapshots/exports)"
 
 # -----------------------------------------------------------------------------
 # PROCESSAMENTO DE CADA LOCAL DE ARMAZENAMENTO
 # -----------------------------------------------------------------------------
-# Processa tanto o SSD quanto o HD para garantir que clips antigos
-# sejam removidos de ambos os locais
+clean_media() {
+    local media="$1"
+    local base="$2"
+    local keep_days="$3"
 
-for base in "$SSD_CLIPS" "$HD_CLIPS"; do
-    # Verifica se o diretório existe
     if [[ ! -d "$base" ]]; then
         log "$LOG_TAG" "Diretório não existe, pulando: $base"
-        continue
+        return
     fi
-    
-    log "$LOG_TAG" "Processando: $base"
-    
-    # Remove arquivos de clips mais antigos que CLIPS_KEEP_DAYS
-    # -type f: Apenas arquivos (não diretórios)
-    # -mtime +N: Modificados há mais de N dias
-    # -delete: Remove os arquivos encontrados
-    #
-    # Nota: +2 significa "mais de 2 dias", ou seja, 3+ dias atrás
-    # O valor vem da variável CLIPS_KEEP_DAYS do .env
-    log "$LOG_TAG" "Removendo clips com mais de ${CLIPS_KEEP_DAYS} dias"
-    
-    deleted_count=$(find "$base" -type f -mtime "+$CLIPS_KEEP_DAYS" -delete -print 2>/dev/null | wc -l)
-    log "$LOG_TAG" "Arquivos removidos: $deleted_count"
-    
-    # Limpa diretórios vazios que ficaram após remoção dos arquivos
-    # 2>/dev/null: Suprime erros (ex: diretório em uso)
-    # || true: Não falha se o find retornar erro
-    log "$LOG_TAG" "Limpando diretórios vazios"
+
+    log "$LOG_TAG" "Processando $media: $base (retenção: ${keep_days} dias)"
+    deleted_count=$(find "$base" -type f -mtime "+$keep_days" -delete -print 2>/dev/null | wc -l)
+    log "$LOG_TAG" "Arquivos $media removidos: $deleted_count"
     find "$base" -type d -empty -delete 2>/dev/null || true
-done
+}
+
+# Processa SSD e HD para clips/snapshots/exports
+clean_media "clips" "$SSD_CLIPS" "$CLIPS_KEEP_DAYS"
+clean_media "clips" "$HD_CLIPS" "$CLIPS_KEEP_DAYS"
+clean_media "snapshots" "$SSD_SNAPSHOTS" "$SNAPSHOTS_KEEP_DAYS"
+clean_media "snapshots" "$HD_SNAPSHOTS" "$SNAPSHOTS_KEEP_DAYS"
+clean_media "exports" "$SSD_EXPORTS" "$EXPORTS_KEEP_DAYS"
+clean_media "exports" "$HD_EXPORTS" "$EXPORTS_KEEP_DAYS"
 
 # -----------------------------------------------------------------------------
 # FINALIZAÇÃO
 # -----------------------------------------------------------------------------
-log "$LOG_TAG" "Limpeza de clips concluída"
+log "$LOG_TAG" "Limpeza de mídia de evento concluída"
