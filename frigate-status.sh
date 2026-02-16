@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VERSION: 1.1
+# VERSION: 1.2
 # =============================================================================
 # FRIGATE-STATUS.SH
 # =============================================================================
@@ -183,21 +183,19 @@ count_recording_days() {
 # -----------------------------------------------------------------------------
 get_oldest_newest_day() {
     local rec_path="$1"
+    OLDEST_DAY="-"
+    NEWEST_DAY="-"
     
     if [[ ! -d "$rec_path" ]]; then
-        OLDEST_DAY="-"
-        NEWEST_DAY="-"
         return
     fi
     
     local days
-    days=$(find "$rec_path" -mindepth 1 -maxdepth 1 -type d -name "20*" -printf '%f\n' 2>/dev/null | sort)
-    
-    OLDEST_DAY=$(echo "$days" | head -1)
-    NEWEST_DAY=$(echo "$days" | tail -1)
-    
-    [[ -z "$OLDEST_DAY" ]] && OLDEST_DAY="-"
-    [[ -z "$NEWEST_DAY" ]] && NEWEST_DAY="-"
+    days="$(find "$rec_path" -mindepth 1 -maxdepth 1 -type d -name "20*" -printf '%f\n' 2>/dev/null | sort || true)"
+    [[ -n "$days" ]] || return
+
+    OLDEST_DAY="$(awk 'NR==1{print; exit}' <<< "$days")"
+    NEWEST_DAY="$(awk 'END{print}' <<< "$days")"
 }
 
 count_files_in_dir() {
