@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VERSION: 1.1
+# VERSION: 1.2
 # =============================================================================
 # FRIGATE-MOVER.SH
 # =============================================================================
@@ -194,8 +194,8 @@ run_rsync() {
     err_file="$(mktemp)"
     local rc=0
 
-    if [[ "$SHOW_PROGRESS" == "1" ]]; then
-        rsync --human-readable --info=progress2 "$@" 2>"$err_file" || rc=$?
+    if [[ "$SHOW_PROGRESS" == "1" || "$VERBOSE" == "1" ]]; then
+        rsync --human-readable --info=progress2,stats2 "$@" 2>"$err_file" || rc=$?
     else
         rsync "$@" 2>"$err_file" || rc=$?
     fi
@@ -678,6 +678,11 @@ case "$MODE" in
         exit 1
         ;;
 esac
+
+# Verbose também habilita progresso do rsync por padrão.
+if [[ "$VERBOSE" == "1" ]]; then
+    SHOW_PROGRESS=1
+fi
 
 # -----------------------------------------------------------------------------
 # EXECUÇÃO PRINCIPAL
