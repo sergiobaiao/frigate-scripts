@@ -26,3 +26,16 @@
 [2026-02-15T15:17:37-03:00] [mover] [INFO] Diretório snapshots não existe, pulando: /mnt/frigate-ssd/frigate/snapshots
 [2026-02-15T15:17:37-03:00] [mover] [INFO] Finalizado
 [2026-02-15T15:17:37-03:00] [mover] [INFO] ==========================================
+[2026-02-16T12:45:31-03:00] [mover] [INFO] Log inicializado em /files/frigate-scripts/.runtime/ssd_to_hd.log (pid=877882, user=root)
+[2026-02-16T12:45:31-03:00] [mover] [INFO] ==========================================
+[2026-02-16T12:45:31-03:00] [mover] [INFO] Iniciando (mode=incremental, dry_run=1)
+[2026-02-16T12:45:31-03:00] [mover] [INFO] Modo: INCREMENTAL (mover dias > 2 dias)
+[2026-02-16T12:45:31-03:00] [mover] [INFO] Mantendo dias >= 2026-02-15 no SSD
+[2026-02-16T12:45:31-03:00] [mover] [INFO] Datas encontradas (1): 2026-02-16
+[2026-02-16T12:45:31-03:00] [mover] [INFO] [DRY-RUN] Recordings incremental: dias_candidatos=0
+[2026-02-16T12:45:31-03:00] [mover] [INFO] Iniciando etapa de clips (corte: < 2026-02-15, candidatos=0, bytes=0B, datas=-..-)
+[2026-02-16T12:45:31-03:00] [mover] [INFO] [DRY-RUN] Clips: candidatos=0 bytes=0B datas=-..-
+[2026-02-16T12:45:31-03:00] [mover] [INFO] Diretório exports não existe, pulando: /mnt/frigate-ssd/frigate/exports
+[2026-02-16T12:45:31-03:00] [mover] [INFO] Diretório snapshots não existe, pulando: /mnt/frigate-ssd/frigate/snapshots
+[2026-02-16T12:45:31-03:00] [mover] [INFO] Finalizado
+[2026-02-16T12:45:31-03:00] [mover] [INFO] ==========================================

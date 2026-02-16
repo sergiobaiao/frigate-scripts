@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VERSION: 1.0
+# VERSION: 1.1
 # =============================================================================
 # FRIGATE-MOVER.SH
 # =============================================================================
@@ -214,6 +214,24 @@ run_rsync() {
     return 0
 }
 
+compute_date_range() {
+    local src="$1"
+    shift
+
+    local dates
+    local oldest="-"
+    local newest="-"
+
+    dates="$(find "$src" -type f "$@" -printf '%TY-%Tm-%Td\n' 2>/dev/null | sort || true)"
+    if [[ -n "$dates" ]]; then
+        oldest="$(awk 'NR==1{print; exit}' <<< "$dates")"
+        newest="$(awk 'END{print}' <<< "$dates")"
+    fi
+
+    DATE_RANGE_OLDEST="$oldest"
+    DATE_RANGE_NEWEST="$newest"
+}
+
 # -----------------------------------------------------------------------------
 # FUNÇÃO: move_media_before_date
 # -----------------------------------------------------------------------------
@@ -243,10 +261,9 @@ move_media_before_date() {
 
     total=$(find "$src" -type f ! -newermt "${cutoff_date} 00:00:00" -printf . 2>/dev/null | wc -c)
     total_bytes=$(find "$src" -type f ! -newermt "${cutoff_date} 00:00:00" -printf '%s\n' 2>/dev/null | awk '{sum+=$1} END{print sum+0}')
-    oldest_date="$(find "$src" -type f ! -newermt "${cutoff_date} 00:00:00" -printf '%TY-%Tm-%Td\n' 2>/dev/null | sort | head -n1)"
-    newest_date="$(find "$src" -type f ! -newermt "${cutoff_date} 00:00:00" -printf '%TY-%Tm-%Td\n' 2>/dev/null | sort | tail -n1)"
-    [[ -z "$oldest_date" ]] && oldest_date="-"
-    [[ -z "$newest_date" ]] && newest_date="-"
+    compute_date_range "$src" ! -newermt "${cutoff_date} 00:00:00"
+    oldest_date="$DATE_RANGE_OLDEST"
+    newest_date="$DATE_RANGE_NEWEST"
     log "$LOG_TAG" "Iniciando etapa de $label (corte: < ${cutoff_date}, candidatos=${total}, bytes=$(bytes_human "$total_bytes"), datas=${oldest_date}..${newest_date})"
 
     while IFS= read -r -d '' file; do
@@ -318,10 +335,9 @@ move_media_older_than_day() {
 
     total=$(find "$src" -type f -daystart -mtime +0 -printf . 2>/dev/null | wc -c)
     total_bytes=$(find "$src" -type f -daystart -mtime +0 -printf '%s\n' 2>/dev/null | awk '{sum+=$1} END{print sum+0}')
-    oldest_date="$(find "$src" -type f -daystart -mtime +0 -printf '%TY-%Tm-%Td\n' 2>/dev/null | sort | head -n1)"
-    newest_date="$(find "$src" -type f -daystart -mtime +0 -printf '%TY-%Tm-%Td\n' 2>/dev/null | sort | tail -n1)"
-    [[ -z "$oldest_date" ]] && oldest_date="-"
-    [[ -z "$newest_date" ]] && newest_date="-"
+    compute_date_range "$src" -daystart -mtime +0
+    oldest_date="$DATE_RANGE_OLDEST"
+    newest_date="$DATE_RANGE_NEWEST"
     log "$LOG_TAG" "Etapa $label (>24h): candidatos=$total bytes=$(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
 
     while IFS= read -r -d '' file; do
