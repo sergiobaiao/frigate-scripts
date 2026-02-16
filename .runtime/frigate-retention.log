@@ -12,3 +12,17 @@
 [2026-02-15T15:17:42-03:00] [retention] [INFO] Processando exports: /mnt/hdexterno/exports (retenção=30d, candidatos=0, bytes=0B, datas=-..-)
 [2026-02-15T15:17:42-03:00] [retention] [INFO] [DRY-RUN] exports: removeria 0 arquivos (0B)
 [2026-02-15T15:17:42-03:00] [retention] [INFO] Limpeza de mídia de evento concluída (DRY-RUN)
+[2026-02-16T14:50:00-03:00] [retention] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-retention.log (pid=1076692, user=root)
+[2026-02-16T14:50:00-03:00] [retention] [INFO] Iniciando limpeza de mídia de evento (clips/snapshots/exports)
+[2026-02-16T14:50:00-03:00] [retention] [ERROR] Falha na linha 113 (exit=1): return
+[2026-02-16T14:50:26-03:00] [retention] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-retention.log (pid=1077384, user=root)
+[2026-02-16T14:50:26-03:00] [retention] [INFO] Iniciando limpeza de mídia de evento (clips/snapshots/exports)
+[2026-02-16T14:50:26-03:00] [retention] [INFO] Processando clips: /mnt/frigate-ssd/frigate/clips (retenção=2d, candidatos=0, bytes=0B, datas=-..-)
+[2026-02-16T14:50:26-03:00] [retention] [INFO] clips removidos: arquivos=0 bytes=0B datas=-..-
+[2026-02-16T14:50:26-03:00] [retention] [INFO] Processando clips: /mnt/hdexterno/frigate/clips (retenção=2d, candidatos=0, bytes=0B, datas=-..-)
+[2026-02-16T14:50:26-03:00] [retention] [INFO] clips removidos: arquivos=0 bytes=0B datas=-..-
+[2026-02-16T14:50:26-03:00] [retention] [INFO] Diretório não existe, pulando: /mnt/frigate-ssd/frigate/snapshots
+[2026-02-16T14:50:26-03:00] [retention] [INFO] Diretório não existe, pulando: /mnt/hdexterno/frigate/snapshots
+[2026-02-16T14:50:26-03:00] [retention] [INFO] Diretório não existe, pulando: /mnt/frigate-ssd/frigate/exports
+[2026-02-16T14:50:26-03:00] [retention] [INFO] Diretório não existe, pulando: /mnt/hdexterno/frigate/exports
+[2026-02-16T14:50:26-03:00] [retention] [INFO] Limpeza de mídia de evento concluída: arquivos=0 bytes=0B

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VERSION: 1.0
+# VERSION: 1.2
 # =============================================================================
 # FRIGATE-RETENTION.SH
 # =============================================================================
@@ -64,6 +64,23 @@ if ! flock -n 9; then
     exit 0
 fi
 
+compute_date_range_for_retention() {
+    local base="$1"
+    local keep_days="$2"
+    local dates
+
+    RET_OLDEST_DATE="-"
+    RET_NEWEST_DATE="-"
+
+    dates="$(find "$base" -type f -mtime "+$keep_days" -printf '%TY-%Tm-%Td\n' 2>/dev/null | sort || true)"
+    if [[ -z "$dates" ]]; then
+        return 0
+    fi
+
+    RET_OLDEST_DATE="$(awk 'NR==1{print; exit}' <<< "$dates")"
+    RET_NEWEST_DATE="$(awk 'END{print}' <<< "$dates")"
+}
+
 # -----------------------------------------------------------------------------
 # INÍCIO DO PROCESSAMENTO
 # -----------------------------------------------------------------------------
@@ -90,15 +107,14 @@ clean_media() {
 
     if [[ ! -d "$base" ]]; then
         log "$LOG_TAG" "Diretório não existe, pulando: $base"
-        return
+        return 0
     fi
 
     candidates=$(find "$base" -type f -mtime "+$keep_days" -printf . 2>/dev/null | wc -c)
     candidate_bytes=$(find "$base" -type f -mtime "+$keep_days" -printf '%s\n' 2>/dev/null | awk '{sum+=$1} END{print sum+0}')
-    oldest_date="$(find "$base" -type f -mtime "+$keep_days" -printf '%TY-%Tm-%Td\n' 2>/dev/null | sort | head -n1)"
-    newest_date="$(find "$base" -type f -mtime "+$keep_days" -printf '%TY-%Tm-%Td\n' 2>/dev/null | sort | tail -n1)"
-    [[ -z "$oldest_date" ]] && oldest_date="-"
-    [[ -z "$newest_date" ]] && newest_date="-"
+    compute_date_range_for_retention "$base" "$keep_days"
+    oldest_date="$RET_OLDEST_DATE"
+    newest_date="$RET_NEWEST_DATE"
 
     log "$LOG_TAG" "Processando $media: $base (retenção=${keep_days}d, candidatos=$candidates, bytes=$(bytes_human "$candidate_bytes"), datas=${oldest_date}..${newest_date})"
 
