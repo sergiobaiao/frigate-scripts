@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# VERSION: 1.0
 # =============================================================================
 # FRIGATE-RESET.SH
 # =============================================================================
@@ -45,6 +46,8 @@ source "$(dirname "$0")/common.sh"
 
 # Tag para identificação nos logs
 LOG_TAG="reset"
+LOG_FILE="${LOG_RESET:-/var/log/frigate-reset.log}"
+MIRROR_STDOUT=1
 
 # Variáveis com valores padrão caso não definidas no .env
 FRIGATE_CONFIG="${FRIGATE_CONFIG:-/home/castro/marquise/config/frigate}"
@@ -86,6 +89,11 @@ while [[ $# -gt 0 ]]; do
     esac
     shift
 done
+
+# Inicializa logs e tratamento de erro.
+setup_logging "$LOG_FILE" "$MIRROR_STDOUT"
+setup_error_trap
+log "$LOG_TAG" "Iniciando frigate-reset (dry_run=$DRY_RUN, assume_yes=$ASSUME_YES)"
 
 # -----------------------------------------------------------------------------
 # FUNÇÃO: format_size
@@ -254,7 +262,8 @@ stop_frigate() {
     log "$LOG_TAG" "Parando container $FRIGATE_CONTAINER..."
     
     if ! docker stop "$FRIGATE_CONTAINER" 2>/dev/null; then
-        echo "[ERRO] Falha ao parar o container $FRIGATE_CONTAINER" >&2
+        log_error "$LOG_TAG" "Falha ao parar o container $FRIGATE_CONTAINER"
+        notify_error "$LOG_TAG" "Falha ao parar container $FRIGATE_CONTAINER"
         return 1
     fi
     
@@ -283,7 +292,8 @@ start_frigate() {
     log "$LOG_TAG" "Iniciando container $FRIGATE_CONTAINER..."
     
     if ! docker start "$FRIGATE_CONTAINER" 2>/dev/null; then
-        echo "[ERRO] Falha ao iniciar o container $FRIGATE_CONTAINER" >&2
+        log_error "$LOG_TAG" "Falha ao iniciar o container $FRIGATE_CONTAINER"
+        notify_error "$LOG_TAG" "Falha ao iniciar container $FRIGATE_CONTAINER"
         return 1
     fi
     
@@ -321,7 +331,8 @@ delete_media() {
         if rm -rf "${dir:?}"/*; then
             log "$LOG_TAG" "$label removido com sucesso"
         else
-            log "$LOG_TAG" "Erro ao remover $label em $dir"
+            log_error "$LOG_TAG" "Erro ao remover $label em $dir"
+            notify_error "$LOG_TAG" "Erro ao remover $label em $dir"
             errors=$((errors + 1))
         fi
     }
@@ -369,7 +380,8 @@ delete_database() {
         log "$LOG_TAG" "Banco de dados removido com sucesso ($files_found arquivos)"
         return 0
     else
-        log "$LOG_TAG" "Erro ao remover banco de dados"
+        log_error "$LOG_TAG" "Erro ao remover banco de dados"
+        notify_error "$LOG_TAG" "Erro ao remover banco de dados em $FRIGATE_CONFIG"
         return 1
     fi
 }

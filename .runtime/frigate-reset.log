@@ -1,0 +1,139 @@
+[2026-02-15T15:22:00-03:00] [reset] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-reset.log (pid=3043704, user=root)
+[2026-02-15T15:22:00-03:00] [reset] [INFO] Iniciando frigate-reset (dry_run=1, assume_yes=1)
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                      FRIGATE - RESET COMPLETO                            ║
+╠══════════════════════════════════════════════════════════════════════════╣
+║  ⚠️  ATENÇÃO: Esta operação é IRREVERSÍVEL!                              ║
+║      Todos os dados abaixo serão PERMANENTEMENTE removidos.              ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+📊 Resumo dos dados a serem removidos:
+
+sort: write failed: 'standard output': Broken pipe
+sort: write error
+  📹 Gravações (recordings):
+    Caminho: /mnt/frigate-ssd/recordings
+    Tamanho: 184GB
+    Arquivos: 66100
+    Mais antigo: 2026-02-14
+    Mais recente: 2026-02-15
+
+  🎬 Clips:
+    Caminho: /mnt/frigate-ssd/clips
+    Tamanho: 8.3MB
+    Arquivos: 270
+    Mais antigo: 2026-02-15
+    Mais recente: 2026-02-15
+
+  📦 Exports: (não existe)
+
+  🖼️ Snapshots: (não existe)
+
+sort: write failed: 'standard output': Broken pipe
+sort: write error
+  📹 Gravações HD (recordings):
+    Caminho: /mnt/hdexterno/recordings
+    Tamanho: 246GB
+    Arquivos: 87595
+    Mais antigo: 2026-02-13
+    Mais recente: 2026-02-14
+
+sort: write failed: 'standard output': Broken pipe
+sort: write error
+  🎬 Clips HD:
+    Caminho: /mnt/hdexterno/clips
+    Tamanho: 158MB
+    Arquivos: 5619
+    Mais antigo: 2026-02-12
+    Mais recente: 2026-02-14
+
+  📦 Exports HD:
+    Caminho: /mnt/hdexterno/exports
+    (vazio)
+
+  🖼️ Snapshots HD:
+    Caminho: /mnt/hdexterno/snapshots
+    (vazio)
+
+  Banco de dados Frigate:
+    Caminho: /home/castro/marquise/config/frigate
+    - frigate.db: 96MB (modificado: 2026-02-15)
+    - frigate.db-wal: 315MB (modificado: 2026-02-15)
+    - frigate.db-shm: 1.5MB (modificado: 2026-02-15)
+    Total: 412MB
+
+📅 Datas que serão perdidas:
+
+  📹 Recordings:
+    Datas que serão perdidas (2): 2026-02-14,2026-02-15
+  🎬 Clips:
+    Datas que serão perdidas (1): 2026-02-15
+  📦 Exports:
+    Datas que serão perdidas: nenhuma
+  🖼️ Snapshots:
+    Datas que serão perdidas: nenhuma
+  📹 Recordings HD:
+    Datas que serão perdidas (2): 2026-02-13,2026-02-14
+  🎬 Clips HD:
+    Datas que serão perdidas (3): 2026-02-12,2026-02-13,2026-02-14
+  📦 Exports HD:
+    Datas que serão perdidas: nenhuma
+  🖼️ Snapshots HD:
+    Datas que serão perdidas: nenhuma
+
+───────────────────────────────────────────────────────────────────────────
+
+🐳 Container Frigate: simulação (não consultado)
+
+📝 O que será feito:
+   1. Parar o container do Frigate
+   2. Remover recordings/clips/exports/snapshots do SSD e do HD Externo
+   3. Apagar o banco de dados do Frigate
+   4. Reiniciar o container do Frigate
+   (modo DRY-RUN: nenhuma alteração será aplicada)
+
+ℹ️  DRY-RUN ativo: execução em modo simulação.
+
+🔄 Iniciando reset do Frigate...
+
+▶️  [1/4] Parando container...
+[2026-02-15T15:22:02-03:00] [reset] [INFO] [DRY-RUN] Pararia container frigate
+✅ Container parado
+
+▶️  [2/4] Removendo mídias (SSD + HD: recordings/clips/exports/snapshots)...
+[2026-02-15T15:22:02-03:00] [reset] [INFO] Removendo recordings (SSD) de /mnt/frigate-ssd/recordings...
+[2026-02-15T15:22:02-03:00] [reset] [INFO] [DRY-RUN] Removeria todo conteúdo de /mnt/frigate-ssd/recordings
+[2026-02-15T15:22:02-03:00] [reset] [INFO] Removendo clips (SSD) de /mnt/frigate-ssd/clips...
+[2026-02-15T15:22:02-03:00] [reset] [INFO] [DRY-RUN] Removeria todo conteúdo de /mnt/frigate-ssd/clips
+[2026-02-15T15:22:02-03:00] [reset] [INFO] exports (SSD) não existe, pulando: /mnt/frigate-ssd/exports
+[2026-02-15T15:22:02-03:00] [reset] [INFO] snapshots (SSD) não existe, pulando: /mnt/frigate-ssd/snapshots
+[2026-02-15T15:22:02-03:00] [reset] [INFO] Removendo recordings (HD) de /mnt/hdexterno/recordings...
+[2026-02-15T15:22:02-03:00] [reset] [INFO] [DRY-RUN] Removeria todo conteúdo de /mnt/hdexterno/recordings
+[2026-02-15T15:22:02-03:00] [reset] [INFO] Removendo clips (HD) de /mnt/hdexterno/clips...
+[2026-02-15T15:22:02-03:00] [reset] [INFO] [DRY-RUN] Removeria todo conteúdo de /mnt/hdexterno/clips
+[2026-02-15T15:22:02-03:00] [reset] [INFO] Removendo exports (HD) de /mnt/hdexterno/exports...
+[2026-02-15T15:22:02-03:00] [reset] [INFO] [DRY-RUN] Removeria todo conteúdo de /mnt/hdexterno/exports
+[2026-02-15T15:22:02-03:00] [reset] [INFO] Removendo snapshots (HD) de /mnt/hdexterno/snapshots...
+[2026-02-15T15:22:02-03:00] [reset] [INFO] [DRY-RUN] Removeria todo conteúdo de /mnt/hdexterno/snapshots
+✅ Mídias removidas
+
+▶️  [3/4] Removendo banco de dados...
+[2026-02-15T15:22:02-03:00] [reset] [INFO] Removendo banco de dados do Frigate...
+[2026-02-15T15:22:02-03:00] [reset] [INFO] [DRY-RUN] Removeria arquivos: /home/castro/marquise/config/frigate/frigate.db* (3 arquivos)
+✅ Banco de dados removido
+
+▶️  [4/4] Reiniciando container...
+[2026-02-15T15:22:02-03:00] [reset] [INFO] [DRY-RUN] Iniciaria container frigate
+✅ Container reiniciado
+
+═══════════════════════════════════════════════════════════════════════════
+✅ RESET COMPLETO REALIZADO COM SUCESSO!
+═══════════════════════════════════════════════════════════════════════════
+
+📋 Próximos passos:
+   - Aguarde alguns segundos para o Frigate inicializar
+   - Acesse a interface web para verificar o status
+   - O banco de dados será recriado automaticamente
+
+[2026-02-15T15:22:02-03:00] [reset] [INFO] Reset concluído com 0 erro(s)

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# VERSION: 1.1
 # =============================================================================
 # FRIGATE-STATUS.SH
 # =============================================================================
@@ -54,6 +55,9 @@ fi
 # -----------------------------------------------------------------------------
 # VARIÁVEIS GLOBAIS
 # -----------------------------------------------------------------------------
+LOG_TAG="status"
+LOG_FILE="${LOG_STATUS:-/var/log/frigate-status.log}"
+MIRROR_STDOUT=1
 MODE="full"
 EXIT_CODE=0
 
@@ -108,11 +112,11 @@ get_frigate_container_status() {
     fi
     
     local container_id
-    container_id=$(docker ps -q --filter name=frigate 2>/dev/null | head -n1)
+    container_id=$(docker ps -q --filter name=frigate 2>/dev/null | head -n1 || true)
     
     if [[ -n "$container_id" ]]; then
         echo "running"
-    elif docker ps -aq --filter name=frigate 2>/dev/null | head -n1 | grep -q .; then
+    elif (docker ps -aq --filter name=frigate 2>/dev/null | head -n1 || true) | grep -q .; then
         echo "stopped"
     else
         echo "missing"
@@ -209,10 +213,25 @@ count_files_in_dir() {
 # -----------------------------------------------------------------------------
 check_active_locks() {
     local locks=()
-    
-    [[ -f "$LOCK_STORAGE" ]] && flock -n 200 200>"$LOCK_STORAGE" 2>/dev/null || locks+=("storage")
-    [[ -f "$LOCK_MEDIA" ]] && flock -n 201 201>"$LOCK_MEDIA" 2>/dev/null || locks+=("media")
-    [[ -f "$LOCK_MOVER" ]] && locks+=("mover")
+
+    if mkdir -p "$(dirname "$LOCK_STORAGE")" 2>/dev/null && touch "$LOCK_STORAGE" 2>/dev/null; then
+        if exec 200>"$LOCK_STORAGE" 2>/dev/null; then
+            flock -n 200 || locks+=("storage")
+        fi
+    fi
+
+    if mkdir -p "$(dirname "$LOCK_MEDIA")" 2>/dev/null && touch "$LOCK_MEDIA" 2>/dev/null; then
+        if exec 201>"$LOCK_MEDIA" 2>/dev/null; then
+            flock -n 201 || locks+=("media")
+        fi
+    fi
+
+    # LOCK_MOVER é legado; só reporta se existir e estiver realmente ocupado.
+    if [[ -n "${LOCK_MOVER:-}" && "$LOCK_MOVER" != "$LOCK_STORAGE" && -e "$LOCK_MOVER" ]]; then
+        if exec 202>"$LOCK_MOVER" 2>/dev/null; then
+            flock -n 202 || locks+=("mover-legacy")
+        fi
+    fi
     
     if [[ ${#locks[@]} -eq 0 ]]; then
         echo "nenhum"
@@ -581,6 +600,10 @@ case "${1:-}" in
         ;;
 esac
 
+setup_logging "$LOG_FILE" "$MIRROR_STDOUT"
+setup_error_trap
+log "$LOG_TAG" "Iniciando frigate-status (mode=$MODE)"
+
 # -----------------------------------------------------------------------------
 # EXECUÇÃO PRINCIPAL
 # -----------------------------------------------------------------------------
@@ -599,11 +622,19 @@ case "$MODE" in
         ;;
     check)
         run_check
-        exit $?
+        check_rc=$?
+        if (( check_rc > 0 )); then
+            log_warn "$LOG_TAG" "Resultado check: exit_code=$check_rc"
+            notify_error "$LOG_TAG" "frigate-status --check retornou $check_rc"
+        else
+            log "$LOG_TAG" "Resultado check: OK"
+        fi
+        exit "$check_rc"
         ;;
     watch)
         run_watch
         ;;
 esac
 
+log "$LOG_TAG" "Finalizado frigate-status (mode=$MODE, exit_code=$EXIT_CODE)"
 exit $EXIT_CODE

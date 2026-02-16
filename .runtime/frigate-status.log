@@ -1,0 +1,18 @@
+[2026-02-15T15:22:00-03:00] [status] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-status.log (pid=3043739, user=root)
+[2026-02-15T15:22:00-03:00] [status] [INFO] Iniciando frigate-status (mode=check)
+[2026-02-15T15:22:00-03:00] [status] [ERROR] Falha na linha 115 (exit=1): head -n1
+[2026-02-15T15:22:00-03:00] [status] [ERROR] Falha na linha 115 (exit=1): container_id=$(docker ps -q --filter name=frigate 2> /dev/null | head -n1)
+OK: All systems operational
+[2026-02-15T15:22:00-03:00] [status] [INFO] Resultado check: OK
+[2026-02-15T15:22:39-03:00] [status] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-status.log (pid=3045369, user=root)
+[2026-02-15T15:22:39-03:00] [status] [INFO] Iniciando frigate-status (mode=check)
+OK: All systems operational
+[2026-02-15T15:22:39-03:00] [status] [INFO] Resultado check: OK
+[2026-02-15T15:23:49-03:00] [status] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-status.log (pid=3047682, user=root)
+[2026-02-15T15:23:49-03:00] [status] [INFO] Iniciando frigate-status (mode=check)
+OK: All systems operational
+[2026-02-15T15:23:49-03:00] [status] [INFO] Resultado check: OK
+[2026-02-15T15:24:06-03:00] [status] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-status.log (pid=3048382, user=root)
+[2026-02-15T15:24:06-03:00] [status] [INFO] Iniciando frigate-status (mode=check)
+OK: All systems operational
+[2026-02-15T15:24:06-03:00] [status] [INFO] Resultado check: OK

@@ -1,0 +1,28 @@
+[2026-02-15T15:17:36-03:00] [mover] [INFO] Log inicializado em /files/frigate-scripts/.runtime/ssd_to_hd.log (pid=3035370, user=root)
+[2026-02-15T15:17:36-03:00] [mover] [INFO] Aviso: usando lock fallback em /files/frigate-scripts/.runtime/frigate-storage.lock
+[2026-02-15T15:17:36-03:00] [mover] [INFO] ==========================================
+[2026-02-15T15:17:36-03:00] [mover] [INFO] Iniciando (mode=incremental, dry_run=1)
+=== Frigate Storage Status ===
+
+📁 SSD (/mnt/frigate-ssd)
+   Uso: 49% | Total: 468G | Livre: 229G
+   Dias de gravação: 1
+
+💾 HD Externo (/mnt/hdexterno)
+   Uso: 15% | Total: 1.8T | Livre: 1.5T
+   Dias de gravação: 2
+
+=== Configurações Atuais ===
+   Manter no SSD: 2 dias
+   Limite de banda: 20000 KB/s
+   Máx dias por execução: 30
+[2026-02-15T15:17:36-03:00] [mover] [INFO] Modo: INCREMENTAL (mover dias > 2 dias)
+[2026-02-15T15:17:36-03:00] [mover] [INFO] Mantendo dias >= 2026-02-14 no SSD
+[2026-02-15T15:17:36-03:00] [mover] [INFO] Datas encontradas (1): 2026-02-15
+[2026-02-15T15:17:36-03:00] [mover] [INFO] [DRY-RUN] Recordings incremental: dias_candidatos=0
+[2026-02-15T15:17:36-03:00] [mover] [INFO] Iniciando etapa de clips (corte: < 2026-02-14, candidatos=0, bytes=0B, datas=-..-)
+[2026-02-15T15:17:37-03:00] [mover] [INFO] [DRY-RUN] Clips: candidatos=0 bytes=0B datas=-..-
+[2026-02-15T15:17:37-03:00] [mover] [INFO] Diretório exports não existe, pulando: /mnt/frigate-ssd/frigate/exports
+[2026-02-15T15:17:37-03:00] [mover] [INFO] Diretório snapshots não existe, pulando: /mnt/frigate-ssd/frigate/snapshots
+[2026-02-15T15:17:37-03:00] [mover] [INFO] Finalizado
+[2026-02-15T15:17:37-03:00] [mover] [INFO] ==========================================

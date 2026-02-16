@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# VERSION: 1.0
 # =============================================================================
 # FRIGATE-MOVER.SH
 # =============================================================================
@@ -187,11 +188,30 @@ vlog() {
 # Executa rsync com flags de progresso opcionais.
 # -----------------------------------------------------------------------------
 run_rsync() {
+    local step_label="${1:-transfer}"
+    shift
+    local err_file
+    err_file="$(mktemp)"
+    local rc=0
+
     if [[ "$SHOW_PROGRESS" == "1" ]]; then
-        rsync --human-readable --info=progress2 "$@"
+        rsync --human-readable --info=progress2 "$@" 2>"$err_file" || rc=$?
     else
-        rsync "$@"
+        rsync "$@" 2>"$err_file" || rc=$?
     fi
+
+    if (( rc != 0 )); then
+        local err_tail
+        err_tail="$(tail -n 20 "$err_file" | tr '\n' '; ')"
+        [[ -z "$err_tail" ]] && err_tail="sem detalhes de stderr"
+        log_error "$LOG_TAG" "Falha no rsync ($step_label): exit=$rc, detalhes=$err_tail"
+        notify_error "$LOG_TAG" "Falha no rsync ($step_label): exit=$rc"
+        rm -f "$err_file"
+        return "$rc"
+    fi
+
+    rm -f "$err_file"
+    return 0
 }
 
 # -----------------------------------------------------------------------------
@@ -208,9 +228,13 @@ move_media_before_date() {
     local processed=0
     local moved=0
     local total=0
+    local total_bytes=0
+    local moved_bytes=0
     local file rel_path dest_file dest_dir
     local progress_step="${MEDIA_PROGRESS_STEP:-${CLIPS_PROGRESS_STEP:-500}}"
     local remaining=0
+    local oldest_date="-"
+    local newest_date="-"
 
     [[ -d "$src" ]] || {
         log "$LOG_TAG" "Diretório $label não existe, pulando: $src"
@@ -218,7 +242,12 @@ move_media_before_date() {
     }
 
     total=$(find "$src" -type f ! -newermt "${cutoff_date} 00:00:00" -printf . 2>/dev/null | wc -c)
-    log "$LOG_TAG" "Iniciando etapa de $label (corte: < ${cutoff_date}, candidatos=${total})"
+    total_bytes=$(find "$src" -type f ! -newermt "${cutoff_date} 00:00:00" -printf '%s\n' 2>/dev/null | awk '{sum+=$1} END{print sum+0}')
+    oldest_date="$(find "$src" -type f ! -newermt "${cutoff_date} 00:00:00" -printf '%TY-%Tm-%Td\n' 2>/dev/null | sort | head -n1)"
+    newest_date="$(find "$src" -type f ! -newermt "${cutoff_date} 00:00:00" -printf '%TY-%Tm-%Td\n' 2>/dev/null | sort | tail -n1)"
+    [[ -z "$oldest_date" ]] && oldest_date="-"
+    [[ -z "$newest_date" ]] && newest_date="-"
+    log "$LOG_TAG" "Iniciando etapa de $label (corte: < ${cutoff_date}, candidatos=${total}, bytes=$(bytes_human "$total_bytes"), datas=${oldest_date}..${newest_date})"
 
     while IFS= read -r -d '' file; do
         rel_path="${file#$src/}"
@@ -229,15 +258,18 @@ move_media_before_date() {
         if [[ "$DRY_RUN" == "1" ]]; then
             vlog "[DRY-RUN] Moveria $label: $rel_path"
         else
+            local size_b=0
+            size_b="$(stat -c%s "$file" 2>/dev/null || echo 0)"
             mkdir -p "$dest_dir"
             chown "${FRIGATE_UID}:${FRIGATE_GID}" "$dest_dir"
 
-            if run_rsync -a --chown="${FRIGATE_UID}:${FRIGATE_GID}" \
+            if run_rsync "$label:$rel_path" -a --chown="${FRIGATE_UID}:${FRIGATE_GID}" \
                 --remove-source-files "$file" "$dest_file"; then
                 ((++moved))
+                moved_bytes=$((moved_bytes + size_b))
                 vlog "$label movido: $rel_path"
             else
-                log "$LOG_TAG" "ERRO ao mover $label: $rel_path"
+                log_error "$LOG_TAG" "ERRO ao mover $label: $rel_path"
             fi
         fi
 
@@ -253,10 +285,10 @@ move_media_before_date() {
     done < <(find "$src" -type f ! -newermt "${cutoff_date} 00:00:00" -print0 2>/dev/null)
 
     if [[ "$DRY_RUN" == "1" ]]; then
-        log "$LOG_TAG" "${label^} candidatos para mover (< ${cutoff_date}): $processed"
+        log "$LOG_TAG" "[DRY-RUN] ${label^}: candidatos=$processed bytes=$(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
     else
         find "$src" -type d -empty -delete 2>/dev/null || true
-        log "$LOG_TAG" "${label^} concluído: $moved/$processed arquivos movidos"
+        log "$LOG_TAG" "${label^} concluído: movidos=$moved/$processed bytes=$(bytes_human "$moved_bytes") de $(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
     fi
 }
 
@@ -271,13 +303,26 @@ move_media_older_than_day() {
     local dst="$3"
 
     local moved=0
+    local moved_bytes=0
+    local total=0
+    local total_bytes=0
     local file rel_path dest_file dest_dir
+    local oldest_date="-"
+    local newest_date="-"
 
     [[ -d "$src" ]] || {
         log "$LOG_TAG" "Diretório $label não existe, pulando: $src"
         echo 0
         return 0
     }
+
+    total=$(find "$src" -type f -daystart -mtime +0 -printf . 2>/dev/null | wc -c)
+    total_bytes=$(find "$src" -type f -daystart -mtime +0 -printf '%s\n' 2>/dev/null | awk '{sum+=$1} END{print sum+0}')
+    oldest_date="$(find "$src" -type f -daystart -mtime +0 -printf '%TY-%Tm-%Td\n' 2>/dev/null | sort | head -n1)"
+    newest_date="$(find "$src" -type f -daystart -mtime +0 -printf '%TY-%Tm-%Td\n' 2>/dev/null | sort | tail -n1)"
+    [[ -z "$oldest_date" ]] && oldest_date="-"
+    [[ -z "$newest_date" ]] && newest_date="-"
+    log "$LOG_TAG" "Etapa $label (>24h): candidatos=$total bytes=$(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
 
     while IFS= read -r -d '' file; do
         rel_path="${file#$src/}"
@@ -287,13 +332,16 @@ move_media_older_than_day() {
         if [[ "$DRY_RUN" == "1" ]]; then
             log "$LOG_TAG" "[DRY-RUN] Moveria $label: $rel_path"
         else
+            local size_b=0
+            size_b="$(stat -c%s "$file" 2>/dev/null || echo 0)"
             mkdir -p "$dest_dir"
             chown "${FRIGATE_UID}:${FRIGATE_GID}" "$dest_dir"
 
-            if run_rsync -a --chown="${FRIGATE_UID}:${FRIGATE_GID}" \
+            if run_rsync "$label:$rel_path" -a --chown="${FRIGATE_UID}:${FRIGATE_GID}" \
                 --remove-source-files "$file" "$dest_file"; then
                 vlog "$label movido: $rel_path"
                 ((++moved))
+                moved_bytes=$((moved_bytes + size_b))
             fi
         fi
     done < <(find "$src" -type f -daystart -mtime +0 -print0 2>/dev/null)
@@ -302,7 +350,13 @@ move_media_older_than_day() {
         find "$src" -type d -empty -delete 2>/dev/null || true
     fi
 
-    echo "$moved"
+    if [[ "$DRY_RUN" == "1" ]]; then
+        log "$LOG_TAG" "[DRY-RUN] $label (>24h): candidatos=$total bytes=$(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
+    else
+        log "$LOG_TAG" "$label (>24h) concluído: movidos=$moved/$total bytes=$(bytes_human "$moved_bytes") de $(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
+    fi
+
+    echo "$moved|$moved_bytes"
 }
 
 # -----------------------------------------------------------------------------
@@ -343,12 +397,12 @@ check_prerequisites() {
 # -----------------------------------------------------------------------------
 acquire_mover_lock() {
     local lock_file="${LOCK_STORAGE:-/tmp/frigate-storage.lock}"
-    local fallback_lock="/tmp/frigate-storage.lock"
+    local fallback_lock="${SCRIPT_DIR}/.runtime/frigate-storage.lock"
 
     # Fallback automático quando /var/lock não é gravável por usuário comum.
-    if ! touch "$lock_file" 2>/dev/null; then
+    if ! (: >>"$lock_file") 2>/dev/null; then
         lock_file="$fallback_lock"
-        touch "$lock_file" || {
+        : >>"$lock_file" || {
             log "$LOG_TAG" "ERRO: não foi possível criar lock em $fallback_lock"
             exit 1
         }
@@ -396,6 +450,9 @@ mode_incremental() {
     
     local processed=0
     local moved=0
+    local moved_files=0
+    local moved_bytes=0
+    local moved_days=()
     
     for day in "${days[@]}"; do
         # Limite de dias por execução
@@ -411,20 +468,39 @@ mode_incremental() {
         ((++processed))
         
         if [[ "$DRY_RUN" == "1" ]]; then
-            log "$LOG_TAG" "[DRY-RUN] Moveria recordings: $ORIGEM_RECORDINGS/$day -> $DESTINO_RECORDINGS/$day"
+            local day_files day_bytes
+            day_files=$(find "$ORIGEM_RECORDINGS/$day" -type f -printf . 2>/dev/null | wc -c)
+            day_bytes=$(find "$ORIGEM_RECORDINGS/$day" -type f -printf '%s\n' 2>/dev/null | awk '{sum+=$1} END{print sum+0}')
+            log "$LOG_TAG" "[DRY-RUN] recordings dia=$day: arquivos=$day_files bytes=$(bytes_human "$day_bytes")"
         else
-            if run_rsync -a --chown="${FRIGATE_UID}:${FRIGATE_GID}" \
+            local day_files day_bytes
+            day_files=$(find "$ORIGEM_RECORDINGS/$day" -type f -printf . 2>/dev/null | wc -c)
+            day_bytes=$(find "$ORIGEM_RECORDINGS/$day" -type f -printf '%s\n' 2>/dev/null | awk '{sum+=$1} END{print sum+0}')
+            if run_rsync "recordings:$day" -a --chown="${FRIGATE_UID}:${FRIGATE_GID}" \
                 "$ORIGEM_RECORDINGS/$day/" "$DESTINO_RECORDINGS/$day/"; then
                 rm -rf "$ORIGEM_RECORDINGS/$day"
                 ((++moved))
+                moved_files=$((moved_files + day_files))
+                moved_bytes=$((moved_bytes + day_bytes))
+                moved_days+=("$day")
                 vlog "Movido: $day"
             else
-                log "$LOG_TAG" "ERRO ao mover recordings: $day"
+                log_error "$LOG_TAG" "ERRO ao mover recordings: $day"
             fi
         fi
     done
     
-    log "$LOG_TAG" "Recordings concluído: $moved/$processed dias movidos"
+    local moved_days_summary="nenhuma"
+    if (( ${#moved_days[@]} > 0 )); then
+        moved_days_summary="$(printf '%s\n' "${moved_days[@]}" | sort -u | paste -sd, -)"
+    fi
+
+    if [[ "$DRY_RUN" == "1" ]]; then
+        log "$LOG_TAG" "[DRY-RUN] Recordings incremental: dias_candidatos=$processed"
+    else
+        log "$LOG_TAG" "Recordings concluído: dias_movidos=$moved/$processed arquivos=$moved_files bytes=$(bytes_human "$moved_bytes") datas=$moved_days_summary"
+    fi
+
     move_media_before_date "clips" "$ORIGEM_CLIPS" "$DESTINO_CLIPS" "$keep_from"
     move_media_before_date "exports" "$ORIGEM_EXPORTS" "$DESTINO_EXPORTS" "$keep_from"
     move_media_before_date "snapshots" "$ORIGEM_SNAPSHOTS" "$DESTINO_SNAPSHOTS" "$keep_from"
@@ -439,14 +515,21 @@ mode_incremental() {
 mode_file() {
     log "$LOG_TAG" "Modo: FILE (mover arquivos > 24h em recordings/clips/exports/snapshots)"
 
+    local rec_stats clips_stats exports_stats snapshots_stats
     local rec_count clips_count exports_count snapshots_count
+    local rec_bytes clips_bytes exports_bytes snapshots_bytes
 
-    rec_count=$(move_media_older_than_day "recordings" "$ORIGEM_RECORDINGS" "$DESTINO_RECORDINGS")
-    clips_count=$(move_media_older_than_day "clips" "$ORIGEM_CLIPS" "$DESTINO_CLIPS")
-    exports_count=$(move_media_older_than_day "exports" "$ORIGEM_EXPORTS" "$DESTINO_EXPORTS")
-    snapshots_count=$(move_media_older_than_day "snapshots" "$ORIGEM_SNAPSHOTS" "$DESTINO_SNAPSHOTS")
+    rec_stats=$(move_media_older_than_day "recordings" "$ORIGEM_RECORDINGS" "$DESTINO_RECORDINGS")
+    clips_stats=$(move_media_older_than_day "clips" "$ORIGEM_CLIPS" "$DESTINO_CLIPS")
+    exports_stats=$(move_media_older_than_day "exports" "$ORIGEM_EXPORTS" "$DESTINO_EXPORTS")
+    snapshots_stats=$(move_media_older_than_day "snapshots" "$ORIGEM_SNAPSHOTS" "$DESTINO_SNAPSHOTS")
 
-    log "$LOG_TAG" "Concluído: arquivos processados (recordings=$rec_count, clips=$clips_count, exports=$exports_count, snapshots=$snapshots_count)"
+    IFS='|' read -r rec_count rec_bytes <<< "$rec_stats"
+    IFS='|' read -r clips_count clips_bytes <<< "$clips_stats"
+    IFS='|' read -r exports_count exports_bytes <<< "$exports_stats"
+    IFS='|' read -r snapshots_count snapshots_bytes <<< "$snapshots_stats"
+
+    log "$LOG_TAG" "Concluído FILE: recordings=${rec_count}($(bytes_human "${rec_bytes:-0}")) clips=${clips_count}($(bytes_human "${clips_bytes:-0}")) exports=${exports_count}($(bytes_human "${exports_bytes:-0}")) snapshots=${snapshots_count}($(bytes_human "${snapshots_bytes:-0}"))"
 }
 
 # -----------------------------------------------------------------------------
@@ -457,78 +540,68 @@ mode_file() {
 # -----------------------------------------------------------------------------
 mode_full() {
     local bw="${1:-$BWLIMIT}"
+    local total_moved_files=0
+    local total_moved_bytes=0
     
     log "$LOG_TAG" "Modo: FULL (mover tudo: recordings + clips + exports + snapshots, bwlimit=${bw} KB/s)"
+
+    move_tree_full() {
+        local label="$1"
+        local src="$2"
+        local dst="$3"
+        local before_files before_bytes before_old before_new
+        local after_files after_bytes moved_files moved_bytes
+
+        [[ -d "$src" ]] || {
+            log_warn "$LOG_TAG" "$label ausente, pulando: $src"
+            return 0
+        }
+
+        collect_path_stats "$src"
+        before_files="$STATS_FILES"
+        before_bytes="$STATS_BYTES"
+        before_old="$STATS_OLDEST"
+        before_new="$STATS_NEWEST"
+
+        log "$LOG_TAG" "FULL $label: origem=$src destino=$dst candidatos=${before_files} bytes=$(bytes_human "$before_bytes") datas=${before_old}..${before_new}"
+        if (( before_files == 0 )); then
+            return 0
+        fi
+
+        if [[ "$DRY_RUN" == "1" ]]; then
+            run_rsync "full:$label:dry-run" -av --dry-run --bwlimit="$bw" "$src/" "$dst/" || return 1
+            log "$LOG_TAG" "[DRY-RUN] FULL $label: candidatos=${before_files} bytes=$(bytes_human "$before_bytes")"
+            return 0
+        fi
+
+        run_rsync "full:$label" -a --bwlimit="$bw" --remove-source-files --ignore-missing-args "$src/" "$dst/" || return 1
+        find "$src" -type d -empty -not -path "$src" -delete 2>/dev/null || true
+
+        collect_path_stats "$src"
+        after_files="$STATS_FILES"
+        after_bytes="$STATS_BYTES"
+        moved_files=$((before_files - after_files))
+        moved_bytes=$((before_bytes - after_bytes))
+        (( moved_files < 0 )) && moved_files=0
+        (( moved_bytes < 0 )) && moved_bytes=0
+
+        total_moved_files=$((total_moved_files + moved_files))
+        total_moved_bytes=$((total_moved_bytes + moved_bytes))
+
+        log "$LOG_TAG" "FULL $label concluído: movidos=${moved_files}/${before_files} bytes=$(bytes_human "$moved_bytes") restante_origem=${after_files} ($(bytes_human "$after_bytes"))"
+    }
     
     if [[ "$DRY_RUN" == "1" ]]; then
-        if [[ -d "$ORIGEM_RECORDINGS" ]]; then
-            log "$LOG_TAG" "[DRY-RUN] Moveria recordings: $ORIGEM_RECORDINGS -> $DESTINO_RECORDINGS"
-            run_rsync -av --dry-run --bwlimit="$bw" "$ORIGEM_RECORDINGS/" "$DESTINO_RECORDINGS/"
-        else
-            log "$LOG_TAG" "[DRY-RUN] recordings ausente, pulando: $ORIGEM_RECORDINGS"
-        fi
-        if [[ -d "$ORIGEM_CLIPS" ]]; then
-            log "$LOG_TAG" "[DRY-RUN] Moveria clips: $ORIGEM_CLIPS -> $DESTINO_CLIPS"
-            run_rsync -av --dry-run --bwlimit="$bw" "$ORIGEM_CLIPS/" "$DESTINO_CLIPS/"
-        else
-            log "$LOG_TAG" "[DRY-RUN] clips ausente, pulando: $ORIGEM_CLIPS"
-        fi
-        if [[ -d "$ORIGEM_EXPORTS" ]]; then
-            log "$LOG_TAG" "[DRY-RUN] Moveria exports: $ORIGEM_EXPORTS -> $DESTINO_EXPORTS"
-            run_rsync -av --dry-run --bwlimit="$bw" "$ORIGEM_EXPORTS/" "$DESTINO_EXPORTS/"
-        else
-            log "$LOG_TAG" "[DRY-RUN] exports ausente, pulando: $ORIGEM_EXPORTS"
-        fi
-        if [[ -d "$ORIGEM_SNAPSHOTS" ]]; then
-            log "$LOG_TAG" "[DRY-RUN] Moveria snapshots: $ORIGEM_SNAPSHOTS -> $DESTINO_SNAPSHOTS"
-            run_rsync -av --dry-run --bwlimit="$bw" "$ORIGEM_SNAPSHOTS/" "$DESTINO_SNAPSHOTS/"
-        else
-            log "$LOG_TAG" "[DRY-RUN] snapshots ausente, pulando: $ORIGEM_SNAPSHOTS"
-        fi
+        move_tree_full "recordings" "$ORIGEM_RECORDINGS" "$DESTINO_RECORDINGS"
+        move_tree_full "clips" "$ORIGEM_CLIPS" "$DESTINO_CLIPS"
+        move_tree_full "exports" "$ORIGEM_EXPORTS" "$DESTINO_EXPORTS"
+        move_tree_full "snapshots" "$ORIGEM_SNAPSHOTS" "$DESTINO_SNAPSHOTS"
     else
-        # Executa rsync com todas as opções para recordings
-        if [[ -d "$ORIGEM_RECORDINGS" ]]; then
-            run_rsync -a \
-                --bwlimit="$bw" \
-                --remove-source-files \
-                --ignore-missing-args \
-                "$ORIGEM_RECORDINGS/" "$DESTINO_RECORDINGS/"
-        fi
-
-        # Executa rsync com todas as opções para clips
-        if [[ -d "$ORIGEM_CLIPS" ]]; then
-            run_rsync -a \
-                --bwlimit="$bw" \
-                --remove-source-files \
-                --ignore-missing-args \
-                "$ORIGEM_CLIPS/" "$DESTINO_CLIPS/"
-        fi
-
-        # Executa rsync com todas as opções para exports
-        if [[ -d "$ORIGEM_EXPORTS" ]]; then
-            run_rsync -a \
-                --bwlimit="$bw" \
-                --remove-source-files \
-                --ignore-missing-args \
-                "$ORIGEM_EXPORTS/" "$DESTINO_EXPORTS/"
-        fi
-
-        # Executa rsync com todas as opções para snapshots
-        if [[ -d "$ORIGEM_SNAPSHOTS" ]]; then
-            run_rsync -a \
-                --bwlimit="$bw" \
-                --remove-source-files \
-                --ignore-missing-args \
-                "$ORIGEM_SNAPSHOTS/" "$DESTINO_SNAPSHOTS/"
-        fi
-        
-        # Limpa diretórios vazios
-        [[ -d "$ORIGEM_RECORDINGS" ]] && find "$ORIGEM_RECORDINGS" -type d -empty -not -path "$ORIGEM_RECORDINGS" -delete 2>/dev/null || true
-        [[ -d "$ORIGEM_CLIPS" ]] && find "$ORIGEM_CLIPS" -type d -empty -not -path "$ORIGEM_CLIPS" -delete 2>/dev/null || true
-        [[ -d "$ORIGEM_EXPORTS" ]] && find "$ORIGEM_EXPORTS" -type d -empty -not -path "$ORIGEM_EXPORTS" -delete 2>/dev/null || true
-        [[ -d "$ORIGEM_SNAPSHOTS" ]] && find "$ORIGEM_SNAPSHOTS" -type d -empty -not -path "$ORIGEM_SNAPSHOTS" -delete 2>/dev/null || true
-        
-        log "$LOG_TAG" "Movimentação completa concluída (recordings + clips + exports + snapshots)"
+        move_tree_full "recordings" "$ORIGEM_RECORDINGS" "$DESTINO_RECORDINGS"
+        move_tree_full "clips" "$ORIGEM_CLIPS" "$DESTINO_CLIPS"
+        move_tree_full "exports" "$ORIGEM_EXPORTS" "$DESTINO_EXPORTS"
+        move_tree_full "snapshots" "$ORIGEM_SNAPSHOTS" "$DESTINO_SNAPSHOTS"
+        log "$LOG_TAG" "Movimentação completa concluída: arquivos=${total_moved_files} bytes=$(bytes_human "$total_moved_bytes")"
     fi
 }
 
@@ -593,6 +666,10 @@ esac
 # -----------------------------------------------------------------------------
 # EXECUÇÃO PRINCIPAL
 # -----------------------------------------------------------------------------
+# Configura logging e rastreio de erro
+setup_logging "$LOG_FILE"
+setup_error_trap
+
 # Verifica pré-requisitos
 check_prerequisites
 

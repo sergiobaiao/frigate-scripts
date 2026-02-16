@@ -1,0 +1,5 @@
+[2026-02-15T15:17:40-03:00] [prune] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-prune-hd.log (pid=3035783, user=root)
+[2026-02-15T15:17:40-03:00] [prune] [INFO] Iniciando verificação de espaço
+[2026-02-15T15:17:40-03:00] [prune] [INFO] Modo DRY-RUN ativo (simulação sem remoções)
+[2026-02-15T15:17:40-03:00] [prune] [INFO] Espaço livre: 85% (mínimo: 15%)
+[2026-02-15T15:17:40-03:00] [prune] [INFO] Espaço suficiente. Nenhuma ação necessária.

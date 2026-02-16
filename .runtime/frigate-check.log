@@ -1,0 +1,15 @@
+[2026-02-15T15:22:00-03:00] [check] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-check.log (pid=3043841, user=root)
+[2026-02-15T15:22:00-03:00] [check] [INFO] Iniciando frigate-check (mode=quick)
+OK: Todas as dependências obrigatórias estão instaladas
+[2026-02-15T15:22:39-03:00] [check] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-check.log (pid=3045472, user=root)
+[2026-02-15T15:22:39-03:00] [check] [INFO] Iniciando frigate-check (mode=quick)
+OK: Todas as dependências obrigatórias estão instaladas
+[2026-02-15T15:23:25-03:00] [check] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-check.log (pid=3047068, user=root)
+[2026-02-15T15:23:25-03:00] [check] [INFO] Iniciando frigate-check (mode=quick)
+OK: Todas as dependências obrigatórias estão instaladas
+[2026-02-15T15:23:49-03:00] [check] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-check.log (pid=3047791, user=root)
+[2026-02-15T15:23:49-03:00] [check] [INFO] Iniciando frigate-check (mode=quick)
+OK: Todas as dependências obrigatórias estão instaladas
+[2026-02-15T15:24:06-03:00] [check] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-check.log (pid=3048454, user=root)
+[2026-02-15T15:24:06-03:00] [check] [INFO] Iniciando frigate-check (mode=quick)
+OK: Todas as dependências obrigatórias estão instaladas

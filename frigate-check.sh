@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# VERSION: 1.0
 # =============================================================================
 # FRIGATE-CHECK.SH
 # =============================================================================
@@ -51,6 +52,9 @@ fi
 # -----------------------------------------------------------------------------
 # VARIÁVEIS GLOBAIS
 # -----------------------------------------------------------------------------
+LOG_TAG="check"
+LOG_FILE="${LOG_CHECK:-/var/log/frigate-check.log}"
+MIRROR_STDOUT=1
 MODE="full"
 EXIT_CODE=0
 PROBLEMS=()
@@ -106,6 +110,7 @@ check_ok() {
 # -----------------------------------------------------------------------------
 check_fail() {
     printf "  ${RED}✗${RESET} %s\n" "$1"
+    log_error "$LOG_TAG" "$1"
     PROBLEMS+=("$1")
     EXIT_CODE=1
 }
@@ -115,6 +120,7 @@ check_fail() {
 # -----------------------------------------------------------------------------
 check_warn() {
     printf "  ${YELLOW}○${RESET} %s\n" "$1"
+    log_warn "$LOG_TAG" "$1"
     WARNINGS+=("$1")
 }
 
@@ -298,16 +304,16 @@ check_mounts() {
         check_warn "HD Externo NÃO montado em $HD_MOUNT"
     fi
     
-    # SSD (assumindo que é /)
-    if [[ -d "/" ]]; then
+    # SSD real configurado
+    if [[ -d "$SSD_ROOT" ]]; then
         local usage
-        usage=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
+        usage=$(get_disk_usage_pct "$SSD_ROOT")
         if (( usage >= 90 )); then
-            check_fail "Partição raiz com ${usage}% de uso (crítico!)"
+            check_fail "SSD com ${usage}% de uso (crítico!)"
         elif (( usage >= 80 )); then
-            check_warn "Partição raiz com ${usage}% de uso"
+            check_warn "SSD com ${usage}% de uso"
         else
-            check_ok "Partição raiz com ${usage}% de uso"
+            check_ok "SSD com ${usage}% de uso"
         fi
     fi
     
@@ -554,6 +560,10 @@ case "${1:-}" in
         ;;
 esac
 
+setup_logging "$LOG_FILE" "$MIRROR_STDOUT"
+setup_error_trap
+log "$LOG_TAG" "Iniciando frigate-check (mode=$MODE)"
+
 # -----------------------------------------------------------------------------
 # EXECUÇÃO PRINCIPAL
 # -----------------------------------------------------------------------------
@@ -581,4 +591,8 @@ case "$MODE" in
         ;;
 esac
 
+if (( EXIT_CODE > 0 )); then
+    notify_error "$LOG_TAG" "frigate-check encontrou problemas (exit_code=$EXIT_CODE)"
+fi
+log "$LOG_TAG" "Finalizado frigate-check (mode=$MODE, exit_code=$EXIT_CODE, problemas=${#PROBLEMS[@]}, avisos=${#WARNINGS[@]})"
 exit $EXIT_CODE

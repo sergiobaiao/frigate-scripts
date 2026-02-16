@@ -1,0 +1,29 @@
+[2026-02-15T15:22:00-03:00] [usb-reset] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-usb-reset.log (pid=3043740, user=root)
+[2026-02-15T15:22:00-03:00] [usb-reset] [INFO] Iniciando reset-usb (args: --list)
+
+=== Dispositivos USB Conectados ===
+
+unable to initialize libusb: -99
+[2026-02-15T15:22:00-03:00] [usb-reset] [ERROR] Falha na linha 66 (exit=1): lsusb
+
+[2026-02-15T15:22:39-03:00] [usb-reset] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-usb-reset.log (pid=3045440, user=root)
+[2026-02-15T15:22:39-03:00] [usb-reset] [INFO] Iniciando reset-usb (args: --list)
+
+=== Dispositivos USB Conectados ===
+
+[2026-02-15T15:22:39-03:00] [usb-reset] [ERROR] Falha ao executar lsusb: unable to initialize libusb: -99
+[2026-02-15T15:22:39-03:00] [usb-reset] [ERROR] Falha na linha 259 (exit=1): return 1
+[2026-02-15T15:23:49-03:00] [usb-reset] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-usb-reset.log (pid=3047759, user=root)
+[2026-02-15T15:23:49-03:00] [usb-reset] [INFO] Iniciando reset-usb (args: --list)
+
+=== Dispositivos USB Conectados ===
+
+[2026-02-15T15:23:49-03:00] [usb-reset] [ERROR] Falha ao executar lsusb: unable to initialize libusb: -99
+[2026-02-15T15:23:49-03:00] [usb-reset] [ERROR] Falha na linha 259 (exit=1): return 1
+[2026-02-15T15:24:06-03:00] [usb-reset] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-usb-reset.log (pid=3048343, user=root)
+[2026-02-15T15:24:06-03:00] [usb-reset] [INFO] Iniciando reset-usb (args: --list)
+
+=== Dispositivos USB Conectados ===
+
+[2026-02-15T15:24:06-03:00] [usb-reset] [ERROR] Falha ao executar lsusb: unable to initialize libusb: -99
+[2026-02-15T15:24:06-03:00] [usb-reset] [ERROR] Falha na linha 259 (exit=1): return 1

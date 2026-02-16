@@ -1,4 +1,5 @@
 #!/bin/bash
+# VERSION: 1.2
 # =============================================================================
 # RESET-USB.SH
 # =============================================================================
@@ -40,9 +41,15 @@ source "$(dirname "$0")/common.sh"
 
 # Tag para identificação nos logs
 LOG_TAG="usb-reset"
+LOG_FILE="${LOG_USB_RESET:-/var/log/frigate-usb-reset.log}"
+MIRROR_STDOUT=1
 
 # Diretório do script (para localizar o .env)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+setup_logging "$LOG_FILE" "$MIRROR_STDOUT"
+setup_error_trap
+log "$LOG_TAG" "Iniciando reset-usb (args: ${*:-<sem argumentos>})"
 
 # -----------------------------------------------------------------------------
 # FUNÇÃO: list_usb_devices
@@ -64,12 +71,20 @@ list_usb_devices() {
     # Contador para numerar os dispositivos
     local i=1
     
+    local lsusb_output
+    if ! lsusb_output="$(lsusb 2>&1)"; then
+        log_error "$LOG_TAG" "Falha ao executar lsusb: $lsusb_output"
+        notify_error "$LOG_TAG" "Falha ao executar lsusb"
+        return 1
+    fi
+
     # Lê a saída do lsusb e processa cada linha
     # Formato típico: Bus 002 Device 003: ID 174c:1153 ASMedia Technology Inc. ASM1153
     while IFS= read -r line; do
         # Extrai o ID (vendor:product)
         local id
-        id=$(echo "$line" | grep -oP 'ID \K[0-9a-f]{4}:[0-9a-f]{4}')
+        id=$(echo "$line" | sed -n 's/.*ID \([0-9a-f]\{4\}:[0-9a-f]\{4\}\).*/\1/p')
+        [[ -n "$id" ]] || continue
         
         # Extrai a descrição (tudo após o ID)
         local desc
@@ -88,7 +103,7 @@ list_usb_devices() {
         USB_DESCS[$i]="$desc"
         
         ((i++))
-    done < <(lsusb)
+    done <<< "$lsusb_output"
     
     echo ""
     
@@ -110,7 +125,9 @@ select_usb_device() {
     declare -a USB_DESCS
     
     # Lista os dispositivos e obtém a contagem
-    list_usb_devices
+    if ! list_usb_devices; then
+        exit 1
+    fi
     local total=$?
     
     if [[ $total -eq 0 ]]; then
@@ -156,7 +173,8 @@ save_to_env() {
     
     # Verifica se o arquivo .env existe
     if [[ ! -f "$env_file" ]]; then
-        echo "Erro: Arquivo .env não encontrado em $env_file"
+        log_error "$LOG_TAG" "Arquivo .env não encontrado em $env_file"
+        notify_error "$LOG_TAG" "Arquivo .env ausente: $env_file"
         exit 1
     fi
     
@@ -191,7 +209,7 @@ reset_usb_device() {
     
     # Verifica se temos um ID configurado
     if [[ -z "$dev" ]]; then
-        echo "Erro: Nenhum dispositivo USB configurado."
+        log_error "$LOG_TAG" "Nenhum dispositivo USB configurado"
         echo ""
         echo "Execute com --select para escolher um dispositivo:"
         echo "  $0 --select"
@@ -203,7 +221,8 @@ reset_usb_device() {
     usb_info=$(lsusb | grep "$dev")
     
     if [[ -z "$usb_info" ]]; then
-        log_simple "$LOG_TAG" "Dispositivo $dev não encontrado"
+        log_error "$LOG_TAG" "Dispositivo $dev não encontrado"
+        notify_error "$LOG_TAG" "Dispositivo USB $dev não encontrado"
         echo "Verifique se o dispositivo está conectado com: lsusb"
         exit 1
     fi
@@ -223,9 +242,10 @@ reset_usb_device() {
     
     # Executa o reset
     if usbreset "/dev/bus/usb/$bus/$devnum"; then
-        log_simple "$LOG_TAG" "Reset concluído com sucesso"
+        log "$LOG_TAG" "Reset concluído com sucesso para $dev em /dev/bus/usb/$bus/$devnum"
     else
-        log_simple "$LOG_TAG" "Erro ao resetar dispositivo"
+        log_error "$LOG_TAG" "Erro ao resetar dispositivo $dev em /dev/bus/usb/$bus/$devnum"
+        notify_error "$LOG_TAG" "Falha ao resetar USB $dev"
         exit 1
     fi
 }

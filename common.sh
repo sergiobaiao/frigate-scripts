@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# VERSION: 1.0
 # =============================================================================
 # FRIGATE NVR - FUNÇÕES E CONFIGURAÇÕES COMPARTILHADAS
 # =============================================================================
@@ -15,7 +16,7 @@
 # -e: Sai imediatamente se qualquer comando falhar
 # -u: Trata variáveis não definidas como erro
 # -o pipefail: Retorna erro se qualquer comando em um pipe falhar
-set -euo pipefail
+set -Eeuo pipefail
 
 # nullglob: Padrões glob que não casam expandem para string vazia
 shopt -s nullglob
@@ -114,7 +115,7 @@ HD_SNAPSHOTS="$(resolve_media_path "${HD_SNAPSHOTS:-${HD_MOUNT}/snapshots}" \
 log() {
     local tag="${1:-script}"
     shift
-    echo "[$(date -Is)] [$tag] $*"
+    echo "[$(date -Is)] [$tag] [INFO] $*"
 }
 
 # -----------------------------------------------------------------------------
@@ -134,6 +135,128 @@ log_simple() {
     local tag="${1:-script}"
     shift
     echo "$(date '+%F %T') [$tag] $*"
+}
+
+log_warn() {
+    local tag="${1:-script}"
+    shift
+    echo "[$(date -Is)] [$tag] [WARN] $*"
+}
+
+log_error() {
+    local tag="${1:-script}"
+    shift
+    echo "[$(date -Is)] [$tag] [ERROR] $*" >&2
+}
+
+bytes_human() {
+    local bytes="${1:-0}"
+    numfmt --to=iec --suffix=B "$bytes" 2>/dev/null || echo "${bytes}B"
+}
+
+# -----------------------------------------------------------------------------
+# FUNÇÃO: setup_logging
+# -----------------------------------------------------------------------------
+# Configura redirecionamento de logs para arquivo com opção de espelhamento
+# no stdout.
+# -----------------------------------------------------------------------------
+setup_logging() {
+    local log_file="$1"
+    local mirror_stdout="${2:-0}"
+    local runtime_dir
+    local fallback_log_file
+
+    runtime_dir="${RUNTIME_DIR:-${SCRIPT_DIR}/.runtime}"
+    fallback_log_file="${runtime_dir}/$(basename "$log_file")"
+
+    if ! mkdir -p "$(dirname "$log_file")" 2>/dev/null || ! (: >>"$log_file") 2>/dev/null; then
+        log_file="$fallback_log_file"
+        mkdir -p "$(dirname "$log_file")"
+        : >>"$log_file"
+    fi
+
+    if [[ "$mirror_stdout" == "1" || -t 1 ]]; then
+        exec > >(tee -a "$log_file") 2>&1
+    else
+        exec >>"$log_file" 2>&1
+    fi
+
+    log "${LOG_TAG:-script}" "Log inicializado em $log_file (pid=$$, user=${USER:-unknown})"
+}
+
+notify_event() {
+    local severity="${1:-info}"
+    local tag="${2:-script}"
+    shift 2
+    local message="$*"
+
+    if command -v logger >/dev/null 2>&1; then
+        logger -t "frigate-${tag}" -p "user.${severity}" -- "$message" >/dev/null 2>&1 || true
+    fi
+
+    if [[ -n "${NOTIFY_CMD:-}" ]]; then
+        "$NOTIFY_CMD" "$severity" "$tag" "$message" >/dev/null 2>&1 || true
+    fi
+}
+
+notify_error() {
+    local tag="${1:-script}"
+    shift
+    local message="$*"
+    notify_event err "$tag" "$message"
+}
+
+__ERR_TRAP_ACTIVE=0
+on_error() {
+    local tag="${1:-script}"
+    local line="${2:-?}"
+    local cmd="${3:-?}"
+    local code="${4:-1}"
+
+    if [[ "$__ERR_TRAP_ACTIVE" == "1" ]]; then
+        return
+    fi
+    __ERR_TRAP_ACTIVE=1
+
+    log_error "$tag" "Falha na linha $line (exit=$code): $cmd"
+    notify_error "$tag" "Falha na linha $line (exit=$code): $cmd"
+
+    __ERR_TRAP_ACTIVE=0
+}
+
+setup_error_trap() {
+    trap 'on_error "${LOG_TAG:-script}" "$LINENO" "$BASH_COMMAND" "$?"' ERR
+}
+
+collect_path_stats() {
+    local path="$1"
+    local filter="${2:-}"
+
+    STATS_FILES=0
+    STATS_BYTES=0
+    STATS_OLDEST="-"
+    STATS_NEWEST="-"
+
+    [[ -d "$path" ]] || return 0
+
+    if [[ -n "$filter" ]]; then
+        STATS_FILES=$(find "$path" -type f $filter -printf . 2>/dev/null | wc -c)
+        STATS_BYTES=$(find "$path" -type f $filter -printf '%s\n' 2>/dev/null | awk '{sum+=$1} END{print sum+0}')
+        local dates
+        dates=$(find "$path" -type f $filter -printf '%TY-%Tm-%Td\n' 2>/dev/null | sort -u)
+        STATS_OLDEST="$(echo "$dates" | head -n1)"
+        STATS_NEWEST="$(echo "$dates" | tail -n1)"
+    else
+        STATS_FILES=$(find "$path" -type f -printf . 2>/dev/null | wc -c)
+        STATS_BYTES=$(find "$path" -type f -printf '%s\n' 2>/dev/null | awk '{sum+=$1} END{print sum+0}')
+        local dates
+        dates=$(find "$path" -type f -printf '%TY-%Tm-%Td\n' 2>/dev/null | sort -u)
+        STATS_OLDEST="$(echo "$dates" | head -n1)"
+        STATS_NEWEST="$(echo "$dates" | tail -n1)"
+    fi
+
+    [[ -z "$STATS_OLDEST" ]] && STATS_OLDEST="-"
+    [[ -z "$STATS_NEWEST" ]] && STATS_NEWEST="-"
 }
 
 # -----------------------------------------------------------------------------

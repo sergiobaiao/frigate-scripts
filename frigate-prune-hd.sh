@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# VERSION: 1.0
 # =============================================================================
 # FRIGATE-PRUNE-HD.SH
 # =============================================================================
@@ -80,27 +81,16 @@ done
 # -----------------------------------------------------------------------------
 # Resolve arquivo de lock com fallback para /tmp quando necessário
 LOCK_FILE="${LOCK_MEDIA:-/tmp/frigate-media.lock}"
-if ! mkdir -p "$(dirname "$LOCK_FILE")" 2>/dev/null || ! touch "$LOCK_FILE" 2>/dev/null; then
-    LOCK_FILE="/tmp/frigate-media.lock"
+if ! mkdir -p "$(dirname "$LOCK_FILE")" 2>/dev/null || ! (: >>"$LOCK_FILE") 2>/dev/null; then
+    LOCK_FILE="${SCRIPT_DIR}/.runtime/frigate-media.lock"
     mkdir -p "$(dirname "$LOCK_FILE")"
-    touch "$LOCK_FILE"
+    : >>"$LOCK_FILE"
 fi
 
 # Resolve arquivo de log com fallback para /tmp quando necessário
 LOG_FILE="${LOG_PRUNE:-/tmp/frigate-prune-hd.log}"
-if ! mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || ! touch "$LOG_FILE" 2>/dev/null; then
-    LOG_FILE="/tmp/frigate-prune-hd.log"
-    mkdir -p "$(dirname "$LOG_FILE")"
-    touch "$LOG_FILE"
-fi
-
-# Redireciona toda a saída (stdout e stderr) para o arquivo de log
-# Modo append (>>) para preservar histórico
-if [[ "$MIRROR_STDOUT" == "1" || -t 1 ]]; then
-    exec > >(tee -a "$LOG_FILE") 2>&1
-else
-    exec >>"$LOG_FILE" 2>&1
-fi
+setup_logging "$LOG_FILE" "$MIRROR_STDOUT"
+setup_error_trap
 
 # -----------------------------------------------------------------------------
 # AQUISIÇÃO DO LOCK
@@ -190,6 +180,7 @@ clip_dates=()
 exports_dates=()
 snapshots_dates=()
 removed_count=0
+freed_bytes=0
 
 # -----------------------------------------------------------------------------
 # LOOP DE LIMPEZA
@@ -236,9 +227,17 @@ else
 
         entry="${candidates[$removed_count]}"
         IFS=$'\t' read -r day media oldest <<< "$entry"
+        size_b="$(du -sb "$oldest" 2>/dev/null | awk '{print $1}')"
+        size_b="${size_b:-0}"
 
-        log "$LOG_TAG" "Removendo ($media): $oldest"
-        rm -rf "$oldest"
+        log "$LOG_TAG" "Removendo ($media): $oldest (tamanho=$(bytes_human "$size_b"))"
+        if rm -rf "$oldest"; then
+            freed_bytes=$((freed_bytes + size_b))
+        else
+            log_error "$LOG_TAG" "Falha ao remover ($media): $oldest"
+            notify_error "$LOG_TAG" "Falha ao remover $oldest"
+            continue
+        fi
 
         case "$media" in
             recordings) rec_dates+=("$day") ;;
@@ -292,6 +291,14 @@ fi
 # -----------------------------------------------------------------------------
 if (( free >= MIN_FREE_PCT )); then
     log "$LOG_TAG" "Meta de espaço livre atingida: ${free}%"
+else
+    log_warn "$LOG_TAG" "Meta não atingida: espaço livre final ${free}% (mínimo ${MIN_FREE_PCT}%)"
+    notify_error "$LOG_TAG" "Prune finalizou abaixo da meta: ${free}% livre (mínimo ${MIN_FREE_PCT}%)"
 fi
 
+if [[ "$DRY_RUN" == "1" ]]; then
+    log "$LOG_TAG" "[DRY-RUN] Resumo: candidatos_removidos=$removed_count bytes_estimados=$(bytes_human "${simulated_freed:-0}")"
+else
+    log "$LOG_TAG" "Resumo: removidos=$removed_count bytes_liberados=$(bytes_human "$freed_bytes") free_final=${free}%"
+fi
 log "$LOG_TAG" "Limpeza concluída"

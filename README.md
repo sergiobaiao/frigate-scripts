@@ -1,5 +1,7 @@
 # 📹 Frigate NVR - Scripts de Gerenciamento de Mídia
 
+> VERSION: 1.1
+
 Sistema automatizado para gerenciamento de armazenamento do [Frigate NVR](https://frigate.video/), movendo gravações do SSD (rápido) para HD externo (longo prazo) e gerenciando retenção.
 
 ## 📁 Estrutura de Arquivos
@@ -12,9 +14,7 @@ scripts/
 ├── README.md               # Esta documentação
 │
 ├── frigate-mover.sh        # 🆕 Script unificado de movimentação
-├── frigate-archive.sh      # → Wrapper para frigate-mover.sh --mode=incremental
-├── frigate-archiver.sh     # → Wrapper para frigate-mover.sh --mode=file
-├── mover_frigate_para_hd.sh # → Wrapper para frigate-mover.sh --mode=full
+├── mover_frigate_para_hd.sh # Wrapper legado para --mode=full
 │
 ├── frigate-prune-hd.sh     # Limpa HD quando espaço baixo
 ├── frigate-vacuum.sh       # Limpa HD quando uso alto
@@ -93,6 +93,13 @@ SSD_EMERGENCY_THRESHOLD=85  # % que dispara emergência
 
 # Performance
 BWLIMIT=20000           # Limite de banda KB/s (20MB/s)
+
+# Logs/alertas
+LOG_MOVER="/var/log/ssd_to_hd.log"
+LOG_PRUNE="/var/log/frigate-prune-hd.log"
+LOG_RETENTION="/var/log/frigate-retention.log"
+LOG_VACUUM="/var/log/frigate-vacuum.log"
+NOTIFY_CMD="/usr/local/bin/frigate-notify"  # opcional
 ```
 
 ### 3. Torne os scripts executáveis
@@ -107,8 +114,8 @@ chmod +x *.sh
 
 | Script | Descrição | Quando Usar |
 |--------|-----------|-------------|
-| `frigate-archive.sh` | Move diretórios de data inteiros do SSD para HD | Recomendado para uso diário |
-| `frigate-archiver.sh` | Move arquivos individuais mais antigos que 24h | Quando precisa de granularidade |
+| `frigate-mover.sh --mode=incremental` | Move diretórios de data inteiros do SSD para HD | Recomendado para uso diário |
+| `frigate-mover.sh --mode=file` | Move arquivos individuais mais antigos que 24h | Quando precisa de granularidade |
 | `mover_frigate_para_hd.sh` | Move TUDO do SSD para HD de uma vez | Emergências ou manutenção |
 
 ### Scripts de Limpeza
@@ -132,7 +139,7 @@ Adicione ao crontab (`crontab -e`):
 
 ```cron
 # Arquiva gravações antigas do SSD para HD (a cada hora)
-0 * * * * /path/to/scripts/frigate-archive.sh >> /var/log/frigate-archive.log 2>&1
+0 * * * * /path/to/scripts/frigate-mover.sh --mode=incremental >> /var/log/ssd_to_hd.log 2>&1
 
 # Limpa HD quando espaço livre < 15% (diário às 3h)
 0 3 * * * /path/to/scripts/frigate-prune-hd.sh
@@ -155,7 +162,12 @@ Os scripts registram suas operações nos seguintes arquivos:
 |--------|----------------|
 | `frigate-prune-hd.sh` | `/var/log/frigate-prune-hd.log` |
 | `frigate-retention.sh` | `/var/log/frigate-retention.log` |
-| `mover_frigate_para_hd.sh` | `/var/log/ssd_to_hd.log` |
+| `frigate-mover.sh` | `/var/log/ssd_to_hd.log` |
+| `frigate-vacuum.sh` | `/var/log/frigate-vacuum.log` |
+
+Se `/var/log` não for gravável, os scripts fazem fallback automático para `./.runtime/`.
+
+Quando configurado `NOTIFY_CMD`, erros também geram notificação (além do log local).
 
 Para monitorar em tempo real:
 
@@ -163,13 +175,31 @@ Para monitorar em tempo real:
 tail -f /var/log/frigate-*.log
 ```
 
+## 🧾 Versionamento de Arquivos
+
+Cada arquivo do projeto possui marcador de versão próprio (`VERSION: X.Y`).
+
+Regras:
+- Base inicial: `1.0`
+- Toda alteração em um arquivo deve incrementar a versão desse arquivo
+- Incremento padrão: `+0.1` (ex.: `1.0 -> 1.1`, `1.9 -> 2.0`)
+
+Utilitário:
+
+```bash
+# Incrementa todos os arquivos
+./version-bump.sh --all
+
+# Incrementa arquivos específicos
+./version-bump.sh frigate-mover.sh README.md
+```
+
 ## 🔒 Mecanismo de Lock
 
 Os scripts usam locks para evitar execuções simultâneas:
 
 - `/var/lock/frigate-storage.lock` - Operações de arquivamento
-- `/var/lock/frigate-media.lock` - Operações de mídia (prune, retention)
-- `/tmp/mover_frigate.lock` - Script mover
+- `/var/lock/frigate-media.lock` - Operações de mídia (prune, retention, vacuum)
 
 Se um script encontrar o lock ocupado, sai silenciosamente (comportamento esperado).
 
@@ -231,7 +261,7 @@ lsusb
 ### Testando em modo dry-run
 
 ```bash
-DRY_RUN=1 ./frigate-archive.sh
+DRY_RUN=1 ./frigate-mover.sh --mode=incremental
 ```
 
 ### Adicionando novos scripts

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# VERSION: 1.0
 # =============================================================================
 # FRIGATE-VACUUM.SH
 # =============================================================================
@@ -39,6 +40,25 @@ LOG_TAG="vacuum"
 
 # Threshold de uso (usa valor do .env ou padrão)
 THRESHOLD="${HD_USAGE_THRESHOLD:-90}"
+LOG_FILE="${LOG_VACUUM:-/var/log/frigate-vacuum.log}"
+MIRROR_STDOUT="${MIRROR_STDOUT:-0}"
+
+setup_logging "$LOG_FILE" "$MIRROR_STDOUT"
+setup_error_trap
+
+# Lock compartilhado com operações de mídia para evitar concorrência.
+LOCK_FILE="${LOCK_MEDIA:-/tmp/frigate-media.lock}"
+if ! mkdir -p "$(dirname "$LOCK_FILE")" 2>/dev/null || ! (: >>"$LOCK_FILE") 2>/dev/null; then
+    LOCK_FILE="${SCRIPT_DIR}/.runtime/frigate-media.lock"
+    mkdir -p "$(dirname "$LOCK_FILE")"
+    : >>"$LOCK_FILE"
+fi
+
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+    log_simple "$LOG_TAG" "Lock ocupado por outro processo, saindo"
+    exit 0
+fi
 
 # -----------------------------------------------------------------------------
 # VERIFICAÇÃO DO PONTO DE MONTAGEM
@@ -83,6 +103,10 @@ date_dirs_for_media() {
 current_usage=$(usage_pct)
 log_simple "$LOG_TAG" "Uso atual: ${current_usage}% (limite: ${THRESHOLD}%)"
 
+removed_count=0
+freed_bytes=0
+removed_days=()
+
 # -----------------------------------------------------------------------------
 # LOOP DE LIMPEZA
 # -----------------------------------------------------------------------------
@@ -103,12 +127,34 @@ while [[ "$(usage_pct)" -ge "$THRESHOLD" ]]; do
     fi
 
     IFS=$'\t' read -r day media oldest_path <<< "$oldest_entry"
-    log_simple "$LOG_TAG" "Removendo dia: $day ($media) em $oldest_path"
-    rm -rf "$oldest_path"
+    size_b="$(du -sb "$oldest_path" 2>/dev/null | awk '{print $1}')"
+    size_b="${size_b:-0}"
+    log "$LOG_TAG" "Removendo dia: $day ($media) em $oldest_path (tamanho=$(bytes_human "$size_b"))"
+    if rm -rf "$oldest_path"; then
+        ((removed_count++))
+        freed_bytes=$((freed_bytes + size_b))
+        removed_days+=("$day")
+    else
+        log_error "$LOG_TAG" "Falha ao remover $oldest_path"
+        notify_error "$LOG_TAG" "Falha ao remover $oldest_path"
+        break
+    fi
     
     # Mostra o novo uso após remoção
     new_usage=$(usage_pct)
-    log_simple "$LOG_TAG" "Uso após remoção: ${new_usage}%"
+    log "$LOG_TAG" "Uso após remoção: ${new_usage}%"
 done
 
-log_simple "$LOG_TAG" "Vacuum concluído"
+if (( ${#removed_days[@]} > 0 )); then
+    removed_days_summary="$(printf '%s\n' "${removed_days[@]}" | sort -u | paste -sd, -)"
+else
+    removed_days_summary="nenhuma"
+fi
+
+final_usage=$(usage_pct)
+if [[ "$final_usage" -ge "$THRESHOLD" ]]; then
+    log_warn "$LOG_TAG" "Vacuum finalizado acima do limite: uso_final=${final_usage}% limite=${THRESHOLD}%"
+    notify_error "$LOG_TAG" "Vacuum finalizado acima do limite: ${final_usage}%"
+fi
+
+log "$LOG_TAG" "Vacuum concluído: removidos=$removed_count bytes_liberados=$(bytes_human "$freed_bytes") dias=$removed_days_summary uso_final=${final_usage}%"

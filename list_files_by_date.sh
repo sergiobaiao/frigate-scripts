@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# VERSION: 1.0
 set -euo pipefail
 
 # list_files_by_date.sh

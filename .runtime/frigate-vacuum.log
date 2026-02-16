@@ -1,0 +1,3 @@
+[2026-02-15T15:17:48-03:00] [vacuum] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-vacuum.log (pid=3036131, user=root)
+2026-02-15 15:17:48 [vacuum] Uso atual: 15% (limite: 90%)
+[2026-02-15T15:17:48-03:00] [vacuum] [INFO] Vacuum concluído: removidos=0 bytes_liberados=0B dias=nenhuma uso_final=15%

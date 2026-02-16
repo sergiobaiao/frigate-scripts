@@ -1,0 +1,14 @@
+[2026-02-15T15:17:42-03:00] [retention] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-retention.log (pid=3035846, user=root)
+[2026-02-15T15:17:42-03:00] [retention] [INFO] Iniciando limpeza de mídia de evento (clips/snapshots/exports)
+[2026-02-15T15:17:42-03:00] [retention] [INFO] Modo DRY-RUN ativo
+[2026-02-15T15:17:42-03:00] [retention] [INFO] Processando clips: /mnt/frigate-ssd/clips (retenção=2d, candidatos=0, bytes=0B, datas=-..-)
+[2026-02-15T15:17:42-03:00] [retention] [INFO] [DRY-RUN] clips: removeria 0 arquivos (0B)
+[2026-02-15T15:17:42-03:00] [retention] [INFO] Processando clips: /mnt/hdexterno/clips (retenção=2d, candidatos=0, bytes=0B, datas=-..-)
+[2026-02-15T15:17:42-03:00] [retention] [INFO] [DRY-RUN] clips: removeria 0 arquivos (0B)
+[2026-02-15T15:17:42-03:00] [retention] [INFO] Diretório não existe, pulando: /mnt/frigate-ssd/snapshots
+[2026-02-15T15:17:42-03:00] [retention] [INFO] Processando snapshots: /mnt/hdexterno/snapshots (retenção=2d, candidatos=0, bytes=0B, datas=-..-)
+[2026-02-15T15:17:42-03:00] [retention] [INFO] [DRY-RUN] snapshots: removeria 0 arquivos (0B)
+[2026-02-15T15:17:42-03:00] [retention] [INFO] Diretório não existe, pulando: /mnt/frigate-ssd/exports
+[2026-02-15T15:17:42-03:00] [retention] [INFO] Processando exports: /mnt/hdexterno/exports (retenção=30d, candidatos=0, bytes=0B, datas=-..-)
+[2026-02-15T15:17:42-03:00] [retention] [INFO] [DRY-RUN] exports: removeria 0 arquivos (0B)
+[2026-02-15T15:17:42-03:00] [retention] [INFO] Limpeza de mídia de evento concluída (DRY-RUN)
