@@ -3,3 +3,61 @@
 [2026-02-15T15:17:40-03:00] [prune] [INFO] Modo DRY-RUN ativo (simulação sem remoções)
 [2026-02-15T15:17:40-03:00] [prune] [INFO] Espaço livre: 85% (mínimo: 15%)
 [2026-02-15T15:17:40-03:00] [prune] [INFO] Espaço suficiente. Nenhuma ação necessária.
+[2026-02-17T15:45:11-03:00] [prune] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-prune-hd.log (pid=2200800, user=root)
+[2026-02-17T15:45:11-03:00] [prune] [INFO] Iniciando verificação de espaço
+[2026-02-17T15:45:11-03:00] [prune] [INFO] Modo DRY-RUN ativo (simulação sem remoções)
+[2026-02-17T15:45:11-03:00] [prune] [INFO] Modo MANUAL ativo: remover tudo anterior a 2026-02-15
+[2026-02-17T15:45:11-03:00] [prune] [INFO] [DRY-RUN] Removeria (recordings): /mnt/hdexterno/frigate/recordings/2026-02-13 (data=2026-02-13, tamanho=3.0GB)
+[2026-02-17T15:45:11-03:00] [prune] [ERROR] Falha na linha 217 (exit=1): ((removed_count++))
+[2026-02-17T15:45:28-03:00] [prune] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-prune-hd.log (pid=2201381, user=root)
+[2026-02-17T15:45:28-03:00] [prune] [INFO] Iniciando verificação de espaço
+[2026-02-17T15:45:28-03:00] [prune] [INFO] Modo DRY-RUN ativo (simulação sem remoções)
+[2026-02-17T15:45:28-03:00] [prune] [INFO] Modo MANUAL ativo: remover tudo anterior a 2026-02-15
+[2026-02-17T15:45:28-03:00] [prune] [INFO] [DRY-RUN] Removeria (recordings): /mnt/hdexterno/frigate/recordings/2026-02-13 (data=2026-02-13, tamanho=3.0GB)
+[2026-02-17T15:45:29-03:00] [prune] [INFO] [DRY-RUN] Removeria (recordings): /mnt/hdexterno/frigate/recordings/2026-02-14 (data=2026-02-14, tamanho=243GB)
+[2026-02-17T15:45:29-03:00] [prune] [INFO] Datas removidas/afetadas (recordings): 2026-02-13,2026-02-14
+[2026-02-17T15:45:29-03:00] [prune] [INFO] Datas removidas/afetadas (clips): nenhuma
+[2026-02-17T15:45:29-03:00] [prune] [INFO] Datas removidas/afetadas (exports): nenhuma
+[2026-02-17T15:45:29-03:00] [prune] [INFO] Datas removidas/afetadas (snapshots): nenhuma
+[2026-02-17T15:45:29-03:00] [prune] [INFO] [DRY-RUN] Resumo manual: removidos=2 bytes_estimados=246GB corte<2026-02-15
+[2026-02-17T15:45:29-03:00] [prune] [INFO] Limpeza manual concluída
+[2026-02-17T15:48:22-03:00] [prune] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-prune-hd.log (pid=2207074, user=root)
+[2026-02-17T15:48:22-03:00] [prune] [INFO] Iniciando verificação de espaço
+[2026-02-17T15:48:22-03:00] [prune] [INFO] Modo DRY-RUN ativo (simulação sem remoções)
+[2026-02-17T15:48:22-03:00] [prune] [INFO] Modo MANUAL ativo: remover tudo anterior a 2026-02-11
+[2026-02-17T15:48:22-03:00] [prune] [INFO] Critério manual: remove apenas diretórios de data (YYYY-MM-DD) em recordings/clips/exports/snapshots no HD
+[2026-02-17T15:48:22-03:00] [prune] [INFO] Candidatos com data < 2026-02-11: 0
+[2026-02-17T15:48:23-03:00] [prune] [INFO] Datas removidas/afetadas (recordings): nenhuma
+[2026-02-17T15:48:23-03:00] [prune] [INFO] Datas removidas/afetadas (clips): nenhuma
+[2026-02-17T15:48:23-03:00] [prune] [INFO] Datas removidas/afetadas (exports): nenhuma
+[2026-02-17T15:48:23-03:00] [prune] [INFO] Datas removidas/afetadas (snapshots): nenhuma
+[2026-02-17T15:48:23-03:00] [prune] [INFO] [DRY-RUN] Resumo manual: removidos=0 bytes_estimados=0B corte<2026-02-11
+[2026-02-17T15:48:23-03:00] [prune] [INFO] Nenhuma pasta de data anterior ao corte foi encontrada no HD
+[2026-02-17T15:48:23-03:00] [prune] [INFO] Limpeza manual concluída
+[2026-02-17T15:52:13-03:00] [prune] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-prune-hd.log (pid=2214356, user=root)
+[2026-02-17T15:52:13-03:00] [prune] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-prune-hd.log (pid=2214357, user=root)
+[2026-02-17T15:52:13-03:00] [prune] [INFO] Iniciando verificação de espaço
+[2026-02-17T15:52:13-03:00] [prune] [INFO] Lock ocupado por outro processo, saindo.
+[2026-02-17T15:52:13-03:00] [prune] [INFO] Modo DRY-RUN ativo (simulação sem remoções)
+[2026-02-17T15:52:13-03:00] [prune] [INFO] Modo MANUAL ativo: remover tudo anterior a 2026-02-11 (modo=mtime)
+[2026-02-17T15:52:13-03:00] [prune] [INFO] Critério manual: remove por mtime dos arquivos em /mnt/hdexterno/frigate (corte < 2026-02-11 00:00:00)
+[2026-02-17T15:52:13-03:00] [prune] [INFO] Candidatos por mtime com data < 2026-02-11: 1 arquivo(s)
+[2026-02-17T15:52:13-03:00] [prune] [INFO] Datas removidas/afetadas (recordings): nenhuma
+[2026-02-17T15:52:13-03:00] [prune] [INFO] Datas removidas/afetadas (clips): nenhuma
+[2026-02-17T15:52:13-03:00] [prune] [INFO] Datas removidas/afetadas (exports): nenhuma
+[2026-02-17T15:52:13-03:00] [prune] [INFO] Datas removidas/afetadas (snapshots): nenhuma
+[2026-02-17T15:52:13-03:00] [prune] [INFO] [DRY-RUN] Resumo manual: removidos=1 bytes_estimados=0B corte<2026-02-11 modo=mtime
+[2026-02-17T15:52:13-03:00] [prune] [INFO] Limpeza manual concluída
+[2026-02-17T15:52:18-03:00] [prune] [INFO] Log inicializado em /files/frigate-scripts/.runtime/frigate-prune-hd.log (pid=2214542, user=root)
+[2026-02-17T15:52:18-03:00] [prune] [INFO] Iniciando verificação de espaço
+[2026-02-17T15:52:18-03:00] [prune] [INFO] Modo DRY-RUN ativo (simulação sem remoções)
+[2026-02-17T15:52:18-03:00] [prune] [INFO] Modo MANUAL ativo: remover tudo anterior a 2026-02-11 (modo=date-dir)
+[2026-02-17T15:52:18-03:00] [prune] [INFO] Critério manual: remove apenas diretórios de data (YYYY-MM-DD) em recordings/clips/exports/snapshots no HD
+[2026-02-17T15:52:18-03:00] [prune] [INFO] Candidatos com data < 2026-02-11: 0
+[2026-02-17T15:52:18-03:00] [prune] [INFO] Datas removidas/afetadas (recordings): nenhuma
+[2026-02-17T15:52:18-03:00] [prune] [INFO] Datas removidas/afetadas (clips): nenhuma
+[2026-02-17T15:52:18-03:00] [prune] [INFO] Datas removidas/afetadas (exports): nenhuma
+[2026-02-17T15:52:18-03:00] [prune] [INFO] Datas removidas/afetadas (snapshots): nenhuma
+[2026-02-17T15:52:18-03:00] [prune] [INFO] [DRY-RUN] Resumo manual: removidos=0 bytes_estimados=0B corte<2026-02-11 modo=date-dir
+[2026-02-17T15:52:18-03:00] [prune] [INFO] Nenhuma pasta de data anterior ao corte foi encontrada no HD
+[2026-02-17T15:52:18-03:00] [prune] [INFO] Limpeza manual concluída
