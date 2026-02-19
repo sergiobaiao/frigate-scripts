@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VERSION: 1.0
+# VERSION: 1.7
 # =============================================================================
 # FRIGATE NVR - FUNÇÕES E CONFIGURAÇÕES COMPARTILHADAS
 # =============================================================================
@@ -255,8 +255,12 @@ collect_path_stats() {
         STATS_NEWEST="$(echo "$dates" | tail -n1)"
     fi
 
-    [[ -z "$STATS_OLDEST" ]] && STATS_OLDEST="-"
-    [[ -z "$STATS_NEWEST" ]] && STATS_NEWEST="-"
+    if [[ -z "$STATS_OLDEST" ]]; then
+        STATS_OLDEST="-"
+    fi
+    if [[ -z "$STATS_NEWEST" ]]; then
+        STATS_NEWEST="-"
+    fi
 }
 
 # -----------------------------------------------------------------------------

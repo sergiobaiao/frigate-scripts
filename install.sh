@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VERSION: 1.1
+# VERSION: 1.7
 set -euo pipefail
 
 # Instala todos os arquivos do diretório atual em /usr/local/sbin

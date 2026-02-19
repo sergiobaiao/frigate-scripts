@@ -1,6 +1,6 @@
 # 📹 Frigate NVR - Scripts de Gerenciamento de Mídia
 
-> VERSION: 1.1
+> VERSION: 1.7
 
 Sistema automatizado para gerenciamento de armazenamento do [Frigate NVR](https://frigate.video/), movendo gravações do SSD (rápido) para HD externo (longo prazo) e gerenciando retenção.
 
@@ -193,6 +193,16 @@ Utilitário:
 # Incrementa arquivos específicos
 ./version-bump.sh frigate-mover.sh README.md
 ```
+
+## 📘 Política do Changelog
+
+O arquivo `changelog.md` é **obrigatório** e deve ser atualizado em toda alteração.
+
+Regras:
+- Toda modificação em qualquer arquivo do projeto deve gerar entrada no `changelog.md`
+- As entradas devem estar em português
+- Use seções no padrão: `Adicionado`, `Alterado`, `Corrigido`, `Removido`, `Segurança`
+- Sem changelog atualizado, a alteração é considerada incompleta
 
 ## 🔒 Mecanismo de Lock
 

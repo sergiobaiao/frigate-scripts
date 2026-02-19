@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VERSION: 1.2
+# VERSION: 1.7
 # =============================================================================
 # FRIGATE-MOVER.SH
 # =============================================================================
@@ -11,10 +11,10 @@
 #   em um único utilitário com diferentes modos de operação.
 #
 # MODOS DE OPERAÇÃO:
-#   --mode=incremental  Move diretórios de data mais antigos que KEEP_SSD_DAYS
+#   --mode=incremental  Copia diretórios de data mais antigos que KEEP_SSD_DAYS
 #                       (substitui frigate-archive.sh)
 #
-#   --mode=file         Move arquivos individuais mais antigos que 24h
+#   --mode=file         Copia arquivos individuais mais antigos que 24h
 #                       (substitui frigate-archiver.sh)
 #
 #   --mode=full         Move TUDO do SSD para HD de uma vez
@@ -23,7 +23,7 @@
 #   --mode=emergency    Igual ao full, mas sem limite de banda (máxima velocidade)
 #
 # USO:
-#   ./frigate-mover.sh                     # Usa modo padrão (incremental)
+#   ./frigate-mover.sh                     # Usa modo padrão (file)
 #   ./frigate-mover.sh --mode=full         # Move tudo
 #   ./frigate-mover.sh --mode=incremental --dry-run  # Simula sem executar
 #   ./frigate-mover.sh --status            # Mostra estatísticas de espaço
@@ -52,7 +52,7 @@ source "$(dirname "$0")/common.sh"
 # VARIÁVEIS GLOBAIS
 # -----------------------------------------------------------------------------
 LOG_TAG="mover"
-MODE="incremental"           # Modo padrão
+MODE="file"                  # Modo padrão (por data de arquivo)
 DRY_RUN="${DRY_RUN:-0}"
 VERBOSE="${VERBOSE:-0}"
 SHOW_PROGRESS="${SHOW_PROGRESS:-0}"
@@ -85,17 +85,17 @@ Uso: frigate-mover.sh [OPÇÕES]
 Script unificado para movimentação de recordings, clips, exports e snapshots do Frigate.
 
 MODOS:
-  --mode=incremental   Move diretórios de data mais antigos que KEEP_SSD_DAYS
-                       Ideal para uso em cron (a cada hora)
+  --mode=file          Copia arquivos individuais mais antigos que 24h (padrão)
+                       Usa mtime do arquivo e NÃO remove origem
                        
-  --mode=file          Move arquivos individuais mais antigos que 24h
-                       Mais granular, porém mais lento
+  --mode=incremental   Copia diretórios de data mais antigos que KEEP_SSD_DAYS
+                       Usa nome da pasta YYYY-MM-DD (modo separado)
                        
   --mode=full          Move TUDO do SSD para HD com limite de banda
-                       Use para manutenção programada
+                       Remove origem após cópia (modo destrutivo)
                        
   --mode=emergency     Move TUDO sem limite de banda (máxima velocidade)
-                       Use apenas em emergências de espaço
+                       Remove origem após cópia (modo destrutivo)
 
 OPÇÕES:
   --dry-run            Simula as operações sem executar
@@ -105,7 +105,7 @@ OPÇÕES:
   --help, -h           Mostra esta ajuda
 
 EXEMPLOS:
-  frigate-mover.sh                          # Modo incremental (padrão)
+  frigate-mover.sh                          # Modo file (padrão)
   frigate-mover.sh --mode=full              # Move tudo
   frigate-mover.sh --mode=incremental -v    # Incremental com detalhes
   frigate-mover.sh --mode=full --progress   # Full com progresso do rsync
@@ -235,7 +235,7 @@ compute_date_range() {
 # -----------------------------------------------------------------------------
 # FUNÇÃO: move_media_before_date
 # -----------------------------------------------------------------------------
-# Move arquivos de uma mídia que sejam mais antigos que a data de corte.
+# Copia arquivos de uma mídia que sejam mais antigos que a data de corte.
 # -----------------------------------------------------------------------------
 move_media_before_date() {
     local label="$1"
@@ -281,12 +281,12 @@ move_media_before_date() {
             chown "${FRIGATE_UID}:${FRIGATE_GID}" "$dest_dir"
 
             if run_rsync "$label:$rel_path" -a --chown="${FRIGATE_UID}:${FRIGATE_GID}" \
-                --remove-source-files "$file" "$dest_file"; then
+                "$file" "$dest_file"; then
                 ((++moved))
                 moved_bytes=$((moved_bytes + size_b))
-                vlog "$label movido: $rel_path"
+                vlog "$label copiado: $rel_path"
             else
-                log_error "$LOG_TAG" "ERRO ao mover $label: $rel_path"
+                log_error "$LOG_TAG" "ERRO ao copiar $label: $rel_path"
             fi
         fi
 
@@ -304,15 +304,14 @@ move_media_before_date() {
     if [[ "$DRY_RUN" == "1" ]]; then
         log "$LOG_TAG" "[DRY-RUN] ${label^}: candidatos=$processed bytes=$(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
     else
-        find "$src" -type d -empty -delete 2>/dev/null || true
-        log "$LOG_TAG" "${label^} concluído: movidos=$moved/$processed bytes=$(bytes_human "$moved_bytes") de $(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
+        log "$LOG_TAG" "${label^} concluído: copiados=$moved/$processed bytes=$(bytes_human "$moved_bytes") de $(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
     fi
 }
 
 # -----------------------------------------------------------------------------
 # FUNÇÃO: move_media_older_than_day
 # -----------------------------------------------------------------------------
-# Move arquivos com mtime > 24h de uma mídia para outra.
+# Copia arquivos com mtime > 24h de uma mídia para outra.
 # -----------------------------------------------------------------------------
 move_media_older_than_day() {
     local label="$1"
@@ -329,7 +328,7 @@ move_media_older_than_day() {
 
     [[ -d "$src" ]] || {
         log "$LOG_TAG" "Diretório $label não existe, pulando: $src"
-        echo 0
+        MOVE_MEDIA_RESULT="0|0"
         return 0
     }
 
@@ -354,25 +353,22 @@ move_media_older_than_day() {
             chown "${FRIGATE_UID}:${FRIGATE_GID}" "$dest_dir"
 
             if run_rsync "$label:$rel_path" -a --chown="${FRIGATE_UID}:${FRIGATE_GID}" \
-                --remove-source-files "$file" "$dest_file"; then
-                vlog "$label movido: $rel_path"
+                "$file" "$dest_file"; then
+                vlog "$label copiado: $rel_path"
                 ((++moved))
                 moved_bytes=$((moved_bytes + size_b))
             fi
         fi
     done < <(find "$src" -type f -daystart -mtime +0 -print0 2>/dev/null)
 
-    if [[ "$DRY_RUN" != "1" ]]; then
-        find "$src" -type d -empty -delete 2>/dev/null || true
-    fi
-
     if [[ "$DRY_RUN" == "1" ]]; then
         log "$LOG_TAG" "[DRY-RUN] $label (>24h): candidatos=$total bytes=$(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
     else
-        log "$LOG_TAG" "$label (>24h) concluído: movidos=$moved/$total bytes=$(bytes_human "$moved_bytes") de $(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
+        log "$LOG_TAG" "$label (>24h) concluído: copiados=$moved/$total bytes=$(bytes_human "$moved_bytes") de $(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
     fi
 
-    echo "$moved|$moved_bytes"
+    MOVE_MEDIA_RESULT="$moved|$moved_bytes"
+    return 0
 }
 
 # -----------------------------------------------------------------------------
@@ -435,11 +431,11 @@ acquire_mover_lock() {
 # -----------------------------------------------------------------------------
 # FUNÇÃO: mode_incremental
 # -----------------------------------------------------------------------------
-# Modo incremental: move diretórios de data mais antigos que KEEP_SSD_DAYS
+# Modo incremental: copia diretórios de data mais antigos que KEEP_SSD_DAYS
 # (Lógica do antigo frigate-archive.sh)
 # -----------------------------------------------------------------------------
 mode_incremental() {
-    log "$LOG_TAG" "Modo: INCREMENTAL (mover dias > ${KEEP_SSD_DAYS} dias)"
+    log "$LOG_TAG" "Modo: INCREMENTAL (copiar dias > ${KEEP_SSD_DAYS} dias por nome da pasta)"
     
     # Calcula a data de corte
     local offset=$((KEEP_SSD_DAYS - 1))
@@ -494,14 +490,13 @@ mode_incremental() {
             day_bytes=$(find "$ORIGEM_RECORDINGS/$day" -type f -printf '%s\n' 2>/dev/null | awk '{sum+=$1} END{print sum+0}')
             if run_rsync "recordings:$day" -a --chown="${FRIGATE_UID}:${FRIGATE_GID}" \
                 "$ORIGEM_RECORDINGS/$day/" "$DESTINO_RECORDINGS/$day/"; then
-                rm -rf "$ORIGEM_RECORDINGS/$day"
                 ((++moved))
                 moved_files=$((moved_files + day_files))
                 moved_bytes=$((moved_bytes + day_bytes))
                 moved_days+=("$day")
-                vlog "Movido: $day"
+                vlog "Copiado: $day"
             else
-                log_error "$LOG_TAG" "ERRO ao mover recordings: $day"
+                log_error "$LOG_TAG" "ERRO ao copiar recordings: $day"
             fi
         fi
     done
@@ -514,7 +509,7 @@ mode_incremental() {
     if [[ "$DRY_RUN" == "1" ]]; then
         log "$LOG_TAG" "[DRY-RUN] Recordings incremental: dias_candidatos=$processed"
     else
-        log "$LOG_TAG" "Recordings concluído: dias_movidos=$moved/$processed arquivos=$moved_files bytes=$(bytes_human "$moved_bytes") datas=$moved_days_summary"
+        log "$LOG_TAG" "Recordings concluído: dias_copiados=$moved/$processed arquivos=$moved_files bytes=$(bytes_human "$moved_bytes") datas=$moved_days_summary"
     fi
 
     move_media_before_date "clips" "$ORIGEM_CLIPS" "$DESTINO_CLIPS" "$keep_from"
@@ -525,20 +520,24 @@ mode_incremental() {
 # -----------------------------------------------------------------------------
 # FUNÇÃO: mode_file
 # -----------------------------------------------------------------------------
-# Modo arquivo: move arquivos individuais mais antigos que 24h
+# Modo arquivo: copia arquivos individuais mais antigos que 24h
 # (Lógica do antigo frigate-archiver.sh)
 # -----------------------------------------------------------------------------
 mode_file() {
-    log "$LOG_TAG" "Modo: FILE (mover arquivos > 24h em recordings/clips/exports/snapshots)"
+    log "$LOG_TAG" "Modo: FILE (copiar arquivos > 24h por mtime em recordings/clips/exports/snapshots)"
 
     local rec_stats clips_stats exports_stats snapshots_stats
     local rec_count clips_count exports_count snapshots_count
     local rec_bytes clips_bytes exports_bytes snapshots_bytes
 
-    rec_stats=$(move_media_older_than_day "recordings" "$ORIGEM_RECORDINGS" "$DESTINO_RECORDINGS")
-    clips_stats=$(move_media_older_than_day "clips" "$ORIGEM_CLIPS" "$DESTINO_CLIPS")
-    exports_stats=$(move_media_older_than_day "exports" "$ORIGEM_EXPORTS" "$DESTINO_EXPORTS")
-    snapshots_stats=$(move_media_older_than_day "snapshots" "$ORIGEM_SNAPSHOTS" "$DESTINO_SNAPSHOTS")
+    move_media_older_than_day "recordings" "$ORIGEM_RECORDINGS" "$DESTINO_RECORDINGS"
+    rec_stats="$MOVE_MEDIA_RESULT"
+    move_media_older_than_day "clips" "$ORIGEM_CLIPS" "$DESTINO_CLIPS"
+    clips_stats="$MOVE_MEDIA_RESULT"
+    move_media_older_than_day "exports" "$ORIGEM_EXPORTS" "$DESTINO_EXPORTS"
+    exports_stats="$MOVE_MEDIA_RESULT"
+    move_media_older_than_day "snapshots" "$ORIGEM_SNAPSHOTS" "$DESTINO_SNAPSHOTS"
+    snapshots_stats="$MOVE_MEDIA_RESULT"
 
     IFS='|' read -r rec_count rec_bytes <<< "$rec_stats"
     IFS='|' read -r clips_count clips_bytes <<< "$clips_stats"

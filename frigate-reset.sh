@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VERSION: 1.0
+# VERSION: 1.7
 # =============================================================================
 # FRIGATE-RESET.SH
 # =============================================================================
@@ -10,9 +10,10 @@
 #   Este script realiza um reset completo do Frigate:
 #   1. Para o container do Frigate
 #   2. Lista e pede confirmação sobre as gravações a serem deletadas
-#   3. Remove todas as gravações do SSD
-#   4. Apaga o banco de dados do Frigate (frigate.db*)
-#   5. Reinicia o container do Frigate
+#   3. Move toda mídia do SSD para o HD externo (mode=full)
+#   4. Remove mídia restante do SSD
+#   5. Apaga o banco de dados do Frigate (frigate.db*)
+#   6. Reinicia o container do Frigate
 #
 # USO:
 #   ./frigate-reset.sh
@@ -53,6 +54,7 @@ MIRROR_STDOUT=1
 FRIGATE_CONFIG="${FRIGATE_CONFIG:-/home/castro/marquise/config/frigate}"
 FRIGATE_CONTAINER="${FRIGATE_CONTAINER:-frigate}"
 DRY_RUN="${DRY_RUN:-0}"
+MOVER_SCRIPT="${SCRIPT_DIR}/frigate-mover.sh"
 
 # Nome do banco de dados do Frigate (padrão)
 FRIGATE_DB_NAME="frigate.db"
@@ -302,9 +304,42 @@ start_frigate() {
 }
 
 # -----------------------------------------------------------------------------
+# FUNÇÃO: run_full_migration
+# -----------------------------------------------------------------------------
+# Move toda a mídia do SSD para o HD usando frigate-mover.sh --mode=full.
+#
+# RETORNO:
+#   0 - Sucesso
+#   1 - Erro
+# -----------------------------------------------------------------------------
+run_full_migration() {
+    if [[ ! -x "$MOVER_SCRIPT" ]]; then
+        log_error "$LOG_TAG" "Script de mover não encontrado/executável: $MOVER_SCRIPT"
+        notify_error "$LOG_TAG" "MIGRACAO FULL indisponivel: $MOVER_SCRIPT"
+        return 1
+    fi
+
+    log "$LOG_TAG" "Iniciando migração FULL SSD->HD via $MOVER_SCRIPT"
+
+    local mover_args=(--mode=full)
+    if [[ "$DRY_RUN" == "1" ]]; then
+        mover_args+=(--dry-run)
+    fi
+
+    if "$MOVER_SCRIPT" "${mover_args[@]}"; then
+        log "$LOG_TAG" "Migração FULL concluída com sucesso"
+        return 0
+    fi
+
+    log_error "$LOG_TAG" "Falha na migração FULL SSD->HD"
+    notify_error "$LOG_TAG" "Falha na migracao FULL SSD->HD no frigate-reset"
+    return 1
+}
+
+# -----------------------------------------------------------------------------
 # FUNÇÃO: delete_media
 # -----------------------------------------------------------------------------
-# Remove recordings/clips/exports/snapshots do SSD e do HD externo
+# Remove recordings/clips/exports/snapshots apenas do SSD
 #
 # RETORNO:
 #   0 - Sucesso
@@ -341,11 +376,6 @@ delete_media() {
     wipe_media_dir "clips (SSD)" "$SSD_CLIPS"
     wipe_media_dir "exports (SSD)" "$SSD_EXPORTS"
     wipe_media_dir "snapshots (SSD)" "$SSD_SNAPSHOTS"
-
-    wipe_media_dir "recordings (HD)" "$HD_RECORDINGS"
-    wipe_media_dir "clips (HD)" "$HD_CLIPS"
-    wipe_media_dir "exports (HD)" "$HD_EXPORTS"
-    wipe_media_dir "snapshots (HD)" "$HD_SNAPSHOTS"
     
     return $errors
 }
@@ -471,9 +501,10 @@ echo ""
 
 echo "📝 O que será feito:"
 echo "   1. Parar o container do Frigate"
-echo "   2. Remover recordings/clips/exports/snapshots do SSD e do HD Externo"
-echo "   3. Apagar o banco de dados do Frigate"
-echo "   4. Reiniciar o container do Frigate"
+echo "   2. Mover todas as mídias do SSD para o HD Externo (mode=full)"
+echo "   3. Remover mídias do SSD (recordings/clips/exports/snapshots)"
+echo "   4. Apagar o banco de dados do Frigate"
+echo "   5. Reiniciar o container do Frigate"
 [[ "$DRY_RUN" == "1" ]] && echo "   (modo DRY-RUN: nenhuma alteração será aplicada)"
 echo ""
 
@@ -510,17 +541,29 @@ fi
 echo "✅ Container parado"
 echo ""
 
-# Passo 2: Remove gravações
-echo "▶️  [2/4] Removendo mídias (SSD + HD: recordings/clips/exports/snapshots)..."
+# Passo 2: Migra dados para o HD
+echo "▶️  [2/5] Migrando mídias do SSD para HD (mode=full)..."
+if ! run_full_migration; then
+    echo "[ERRO] Falha na migração FULL para o HD. Abortando para evitar perda de dados." >&2
+    if ! start_frigate; then
+        echo "[ERRO] Também falhou ao reiniciar o container após abortar." >&2
+    fi
+    exit 1
+fi
+echo "✅ Migração para HD concluída"
+echo ""
+
+# Passo 3: Remove gravações do SSD
+echo "▶️  [3/5] Removendo mídias do SSD (recordings/clips/exports/snapshots)..."
 if ! delete_media; then
     echo "[AVISO] Houve erros ao remover algumas mídias" >&2
     errors=$((errors + 1))
 fi
-echo "✅ Mídias removidas"
+echo "✅ Mídias do SSD removidas"
 echo ""
 
-# Passo 3: Remove banco de dados
-echo "▶️  [3/4] Removendo banco de dados..."
+# Passo 4: Remove banco de dados
+echo "▶️  [4/5] Removendo banco de dados..."
 if [[ -d "$FRIGATE_CONFIG" ]]; then
     if ! delete_database; then
         echo "[AVISO] Houve erros ao remover o banco de dados" >&2
@@ -532,8 +575,8 @@ else
 fi
 echo ""
 
-# Passo 4: Reinicia o container
-echo "▶️  [4/4] Reiniciando container..."
+# Passo 5: Reinicia o container
+echo "▶️  [5/5] Reiniciando container..."
 if ! start_frigate; then
     echo "[ERRO] Não foi possível reiniciar o container!" >&2
     echo "       Execute manualmente: docker start $FRIGATE_CONTAINER" >&2
