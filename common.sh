@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VERSION: 1.7
+# VERSION: 1.8
 # =============================================================================
 # FRIGATE NVR - FUNÇÕES E CONFIGURAÇÕES COMPARTILHADAS
 # =============================================================================
@@ -231,6 +231,7 @@ setup_error_trap() {
 collect_path_stats() {
     local path="$1"
     local filter="${2:-}"
+    local dates first_date last_date
 
     STATS_FILES=0
     STATS_BYTES=0
@@ -242,17 +243,18 @@ collect_path_stats() {
     if [[ -n "$filter" ]]; then
         STATS_FILES=$(find "$path" -type f $filter -printf . 2>/dev/null | wc -c)
         STATS_BYTES=$(find "$path" -type f $filter -printf '%s\n' 2>/dev/null | awk '{sum+=$1} END{print sum+0}')
-        local dates
-        dates=$(find "$path" -type f $filter -printf '%TY-%Tm-%Td\n' 2>/dev/null | sort -u)
-        STATS_OLDEST="$(echo "$dates" | head -n1)"
-        STATS_NEWEST="$(echo "$dates" | tail -n1)"
+        dates="$(find "$path" -type f $filter -printf '%TY-%Tm-%Td\n' 2>/dev/null | sort -u || true)"
     else
         STATS_FILES=$(find "$path" -type f -printf . 2>/dev/null | wc -c)
         STATS_BYTES=$(find "$path" -type f -printf '%s\n' 2>/dev/null | awk '{sum+=$1} END{print sum+0}')
-        local dates
-        dates=$(find "$path" -type f -printf '%TY-%Tm-%Td\n' 2>/dev/null | sort -u)
-        STATS_OLDEST="$(echo "$dates" | head -n1)"
-        STATS_NEWEST="$(echo "$dates" | tail -n1)"
+        dates="$(find "$path" -type f -printf '%TY-%Tm-%Td\n' 2>/dev/null | sort -u || true)"
+    fi
+
+    if [[ -n "$dates" ]]; then
+        first_date="${dates%%$'\n'*}"
+        last_date="${dates##*$'\n'}"
+        STATS_OLDEST="$first_date"
+        STATS_NEWEST="$last_date"
     fi
 
     if [[ -z "$STATS_OLDEST" ]]; then

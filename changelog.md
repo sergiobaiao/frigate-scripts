@@ -13,6 +13,35 @@ Regra adotada:
 ### Alterado
 - Nenhuma alteracao pendente.
 
+## [1.8] - 2026-02-21
+### Adicionado
+- Arquivo `frigate-cron` com os agendamentos oficiais para instalacao em `/etc/cron.d/frigate-cron`.
+- Arquivo `.gitignore` com exclusao de backups e pasta de seguranca local:
+  - `.bkp/`
+  - `*.bak.*`
+  - `.env.bak.`
+
+### Alterado
+- `install.sh`:
+  - migrou de gerenciamento via `crontab -e` para instalacao de `/etc/cron.d/frigate-cron`;
+  - agora limpa (zera) a crontab pessoal do root apos backup;
+  - copia o cron dedicado para `/etc/cron.d/frigate-cron` com permissoes corretas;
+  - ignora arquivos de backup/documentacao durante copia para `/usr/local/sbin`.
+- `README.md`: documentacao de cron atualizada para modelo `/etc/cron.d`.
+
+### Analise (comparativo com backups `.bak.20260221111447`)
+- `frigate-mover.sh`:
+  - modo `file` mudou de `>24h` para `FILE_MIN_AGE_MINUTES` (padrao 20 min);
+  - limite de banda (`BWLIMIT`) aplicado tambem nos modos `file` e `incremental`;
+  - reforco de robustez para arquivos removidos durante varredura (`arquivo ausente`).
+- `.env`:
+  - `BWLIMIT` reduzido de `20000` para `8000`;
+  - adicionadas variaveis `FILE_MIN_AGE_MINUTES`, `WATCHDOG_COOLDOWN_MINUTES`, `WATCHDOG_MODE`, `WATCHDOG_USE_EMERGENCY`.
+- `hd-watchdog-min.sh`:
+  - adicionados cooldown de execucao, arquivo de estado em `.runtime/watchdog.last` e modo configuravel (`file|incremental|full|emergency`).
+- `common.sh`:
+  - ajuste em `collect_path_stats` para coleta de datas sem `head/tail`, com menor risco sob `pipefail`.
+
 ## [0.1] - 2026-02-15
 ### Adicionado
 - Consolidacao inicial dos scripts operacionais para SSD/HD no fluxo Frigate.
@@ -158,21 +187,21 @@ Regra adotada:
 
 ---
 
-## Estado atual de versoes (2026-02-19)
-- `README.md`: 1.7
-- `common.sh`: 1.7
-- `frigate-mover.sh`: 1.7
-- `frigate-prune-hd.sh`: 1.7
-- `frigate-retention.sh`: 1.7
-- `frigate-status.sh`: 1.7
-- `install.sh`: 1.7
-- `version-bump.sh`: 1.7
-- `reset-usb.sh`: 1.7
-- `frigate-reset.sh`: 1.7
-- `frigate-vacuum.sh`: 1.7
-- `frigate-check.sh`: 1.7
-- `frigate-logrotate.sh`: 1.7
-- `hd-watchdog-min.sh`: 1.7
-- `list_files_by_date.sh`: 1.7
-- `mover_frigate_para_hd.sh`: 1.7
-- `.env`: 1.7
+## Estado atual de versoes (2026-02-21)
+- `README.md`: 1.8
+- `common.sh`: 1.8
+- `frigate-mover.sh`: 1.8
+- `frigate-prune-hd.sh`: 1.8
+- `frigate-retention.sh`: 1.8
+- `frigate-status.sh`: 1.8
+- `install.sh`: 1.8
+- `version-bump.sh`: 1.8
+- `reset-usb.sh`: 1.8
+- `frigate-reset.sh`: 1.8
+- `frigate-vacuum.sh`: 1.8
+- `frigate-check.sh`: 1.8
+- `frigate-logrotate.sh`: 1.8
+- `hd-watchdog-min.sh`: 1.8
+- `list_files_by_date.sh`: 1.8
+- `mover_frigate_para_hd.sh`: 1.8
+- `.env`: 1.8

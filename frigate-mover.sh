@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VERSION: 1.7
+# VERSION: 1.8
 # =============================================================================
 # FRIGATE-MOVER.SH
 # =============================================================================
@@ -14,7 +14,7 @@
 #   --mode=incremental  Copia diretórios de data mais antigos que KEEP_SSD_DAYS
 #                       (substitui frigate-archive.sh)
 #
-#   --mode=file         Copia arquivos individuais mais antigos que 24h
+#   --mode=file         Copia arquivos individuais mais antigos que FILE_MIN_AGE_MINUTES
 #                       (substitui frigate-archiver.sh)
 #
 #   --mode=full         Move TUDO do SSD para HD de uma vez
@@ -38,7 +38,8 @@
 #
 # CONFIGURAÇÕES (via .env):
 #   KEEP_SSD_DAYS   - Dias para manter no SSD (padrão: 2)
-#   BWLIMIT         - Limite de banda KB/s (padrão: 20000)
+#   BWLIMIT                - Limite de banda KB/s (padrão: 20000)
+#   FILE_MIN_AGE_MINUTES   - Idade mínima (min) para copiar no modo file (padrão: 20)
 #
 # AUTOR: Sistema Marquise
 # =============================================================================
@@ -60,6 +61,7 @@ SHOW_PROGRESS="${SHOW_PROGRESS:-0}"
 # Configurações do .env com valores padrão
 KEEP_SSD_DAYS="${KEEP_SSD_DAYS:-2}"
 BWLIMIT="${BWLIMIT:-20000}"
+FILE_MIN_AGE_MINUTES="${FILE_MIN_AGE_MINUTES:-20}"
 MAX_DAYS_PER_RUN="${MAX_DAYS_PER_RUN:-30}"
 
 # Caminhos (resolve symlinks para que find funcione corretamente)
@@ -85,7 +87,7 @@ Uso: frigate-mover.sh [OPÇÕES]
 Script unificado para movimentação de recordings, clips, exports e snapshots do Frigate.
 
 MODOS:
-  --mode=file          Copia arquivos individuais mais antigos que 24h (padrão)
+  --mode=file          Copia arquivos mais antigos que FILE_MIN_AGE_MINUTES (padrão)
                        Usa mtime do arquivo e NÃO remove origem
                        
   --mode=incremental   Copia diretórios de data mais antigos que KEEP_SSD_DAYS
@@ -114,6 +116,7 @@ EXEMPLOS:
 CONFIGURAÇÕES (.env):
   KEEP_SSD_DAYS=$KEEP_SSD_DAYS
   BWLIMIT=$BWLIMIT KB/s
+  FILE_MIN_AGE_MINUTES=$FILE_MIN_AGE_MINUTES
   MAX_DAYS_PER_RUN=$MAX_DAYS_PER_RUN
 EOF
 }
@@ -267,6 +270,11 @@ move_media_before_date() {
     log "$LOG_TAG" "Iniciando etapa de $label (corte: < ${cutoff_date}, candidatos=${total}, bytes=$(bytes_human "$total_bytes"), datas=${oldest_date}..${newest_date})"
 
     while IFS= read -r -d '' file; do
+        if [[ ! -f "$file" ]]; then
+            vlog "$label ignorado (arquivo ausente durante varredura): $file"
+            continue
+        fi
+
         rel_path="${file#$src/}"
         dest_file="$dst/$rel_path"
         dest_dir="$(dirname "$dest_file")"
@@ -280,7 +288,7 @@ move_media_before_date() {
             mkdir -p "$dest_dir"
             chown "${FRIGATE_UID}:${FRIGATE_GID}" "$dest_dir"
 
-            if run_rsync "$label:$rel_path" -a --chown="${FRIGATE_UID}:${FRIGATE_GID}" \
+            if run_rsync "$label:$rel_path" -a --bwlimit="$BWLIMIT" --chown="${FRIGATE_UID}:${FRIGATE_GID}" \
                 "$file" "$dest_file"; then
                 ((++moved))
                 moved_bytes=$((moved_bytes + size_b))
@@ -299,7 +307,7 @@ move_media_before_date() {
                 log "$LOG_TAG" "Progresso $label: processados=$processed movidos=$moved restante=$remaining"
             fi
         fi
-    done < <(find "$src" -type f ! -newermt "${cutoff_date} 00:00:00" -print0 2>/dev/null)
+    done < <(find "$src" -type f ! -newermt "${cutoff_date} 00:00:00" -print0 2>/dev/null || true)
 
     if [[ "$DRY_RUN" == "1" ]]; then
         log "$LOG_TAG" "[DRY-RUN] ${label^}: candidatos=$processed bytes=$(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
@@ -311,7 +319,7 @@ move_media_before_date() {
 # -----------------------------------------------------------------------------
 # FUNÇÃO: move_media_older_than_day
 # -----------------------------------------------------------------------------
-# Copia arquivos com mtime > 24h de uma mídia para outra.
+# Copia arquivos com idade >= FILE_MIN_AGE_MINUTES de uma mídia para outra.
 # -----------------------------------------------------------------------------
 move_media_older_than_day() {
     local label="$1"
@@ -332,14 +340,19 @@ move_media_older_than_day() {
         return 0
     }
 
-    total=$(find "$src" -type f -daystart -mtime +0 -printf . 2>/dev/null | wc -c)
-    total_bytes=$(find "$src" -type f -daystart -mtime +0 -printf '%s\n' 2>/dev/null | awk '{sum+=$1} END{print sum+0}')
-    compute_date_range "$src" -daystart -mtime +0
+    total=$(find "$src" -type f -mmin +"$FILE_MIN_AGE_MINUTES" -printf . 2>/dev/null | wc -c)
+    total_bytes=$(find "$src" -type f -mmin +"$FILE_MIN_AGE_MINUTES" -printf '%s\n' 2>/dev/null | awk '{sum+=$1} END{print sum+0}')
+    compute_date_range "$src" -mmin +"$FILE_MIN_AGE_MINUTES"
     oldest_date="$DATE_RANGE_OLDEST"
     newest_date="$DATE_RANGE_NEWEST"
-    log "$LOG_TAG" "Etapa $label (>24h): candidatos=$total bytes=$(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
+    log "$LOG_TAG" "Etapa $label (idade>=${FILE_MIN_AGE_MINUTES}min): candidatos=$total bytes=$(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
 
     while IFS= read -r -d '' file; do
+        if [[ ! -f "$file" ]]; then
+            vlog "$label ignorado (arquivo ausente durante varredura): $file"
+            continue
+        fi
+
         rel_path="${file#$src/}"
         dest_file="$dst/$rel_path"
         dest_dir="$(dirname "$dest_file")"
@@ -352,19 +365,19 @@ move_media_older_than_day() {
             mkdir -p "$dest_dir"
             chown "${FRIGATE_UID}:${FRIGATE_GID}" "$dest_dir"
 
-            if run_rsync "$label:$rel_path" -a --chown="${FRIGATE_UID}:${FRIGATE_GID}" \
+            if run_rsync "$label:$rel_path" -a --bwlimit="$BWLIMIT" --chown="${FRIGATE_UID}:${FRIGATE_GID}" \
                 "$file" "$dest_file"; then
                 vlog "$label copiado: $rel_path"
                 ((++moved))
                 moved_bytes=$((moved_bytes + size_b))
             fi
         fi
-    done < <(find "$src" -type f -daystart -mtime +0 -print0 2>/dev/null)
+    done < <(find "$src" -type f -mmin +"$FILE_MIN_AGE_MINUTES" -print0 2>/dev/null || true)
 
     if [[ "$DRY_RUN" == "1" ]]; then
-        log "$LOG_TAG" "[DRY-RUN] $label (>24h): candidatos=$total bytes=$(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
+        log "$LOG_TAG" "[DRY-RUN] $label (idade>=${FILE_MIN_AGE_MINUTES}min): candidatos=$total bytes=$(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
     else
-        log "$LOG_TAG" "$label (>24h) concluído: copiados=$moved/$total bytes=$(bytes_human "$moved_bytes") de $(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
+        log "$LOG_TAG" "$label (idade>=${FILE_MIN_AGE_MINUTES}min) concluído: copiados=$moved/$total bytes=$(bytes_human "$moved_bytes") de $(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
     fi
 
     MOVE_MEDIA_RESULT="$moved|$moved_bytes"
@@ -449,7 +462,7 @@ mode_incremental() {
     mapfile -t days < <(
         find "$ORIGEM_RECORDINGS" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' \
         | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' \
-        | sort
+        | sort || true
     )
 
     if (( ${#days[@]} == 0 )); then
@@ -488,7 +501,7 @@ mode_incremental() {
             local day_files day_bytes
             day_files=$(find "$ORIGEM_RECORDINGS/$day" -type f -printf . 2>/dev/null | wc -c)
             day_bytes=$(find "$ORIGEM_RECORDINGS/$day" -type f -printf '%s\n' 2>/dev/null | awk '{sum+=$1} END{print sum+0}')
-            if run_rsync "recordings:$day" -a --chown="${FRIGATE_UID}:${FRIGATE_GID}" \
+            if run_rsync "recordings:$day" -a --bwlimit="$BWLIMIT" --chown="${FRIGATE_UID}:${FRIGATE_GID}" \
                 "$ORIGEM_RECORDINGS/$day/" "$DESTINO_RECORDINGS/$day/"; then
                 ((++moved))
                 moved_files=$((moved_files + day_files))
@@ -520,11 +533,11 @@ mode_incremental() {
 # -----------------------------------------------------------------------------
 # FUNÇÃO: mode_file
 # -----------------------------------------------------------------------------
-# Modo arquivo: copia arquivos individuais mais antigos que 24h
+# Modo arquivo: copia arquivos individuais mais antigos que FILE_MIN_AGE_MINUTES
 # (Lógica do antigo frigate-archiver.sh)
 # -----------------------------------------------------------------------------
 mode_file() {
-    log "$LOG_TAG" "Modo: FILE (copiar arquivos > 24h por mtime em recordings/clips/exports/snapshots)"
+    log "$LOG_TAG" "Modo: FILE (copiar arquivos com idade>=${FILE_MIN_AGE_MINUTES}min em recordings/clips/exports/snapshots)"
 
     local rec_stats clips_stats exports_stats snapshots_stats
     local rec_count clips_count exports_count snapshots_count

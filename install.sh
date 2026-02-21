@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# VERSION: 1.7
+# VERSION: 1.8
 set -euo pipefail
 
-# Instala todos os arquivos do diretório atual em /usr/local/sbin
-# e recria o crontab do root apenas com os jobs do Frigate.
+# Instala os scripts em /usr/local/sbin, instala /etc/cron.d/frigate-cron
+# e zera o crontab pessoal do root.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEST_DIR="${DEST_DIR:-/usr/local/sbin}"
 LOG_DIR="${LOG_DIR:-/var/log/frigate}"
+CRON_SOURCE="${CRON_SOURCE:-$SCRIPT_DIR/frigate-cron}"
+CRON_DEST="${CRON_DEST:-/etc/cron.d/frigate-cron}"
 
 copy_file() {
     local src="$1"
@@ -23,39 +25,30 @@ assert_root() {
     fi
 }
 
-install_cron() {
-    local cron_tmp backup_file timestamp
-    cron_tmp="$(mktemp)"
+install_cron_d() {
+    if [[ ! -f "$CRON_SOURCE" ]]; then
+        echo "ERRO: arquivo de cron não encontrado: $CRON_SOURCE"
+        exit 1
+    fi
+
+    install -o root -g root -m 0644 "$CRON_SOURCE" "$CRON_DEST"
+    echo "Cron instalado em: $CRON_DEST"
+}
+
+clear_root_user_crontab() {
+    local backup_file timestamp
     timestamp="$(date +%Y%m%d-%H%M%S)"
     backup_file="/var/backups/root-crontab-${timestamp}.bak"
 
     mkdir -p /var/backups
     if crontab -l >/dev/null 2>&1; then
         crontab -l > "$backup_file"
-        echo "Backup do crontab atual salvo em: $backup_file"
+        echo "Backup do crontab pessoal do root salvo em: $backup_file"
+        crontab -r
+        echo "Crontab pessoal do root removido."
     else
-        echo "Nenhum crontab anterior encontrado para root."
+        echo "Crontab pessoal do root já estava vazio."
     fi
-
-    cat > "$cron_tmp" <<'EOF'
-20 3 * * * /usr/local/sbin/frigate-mover.sh >> /var/log/frigate/frigate-mover.log 2>&1
-
-# Limpa HD quando espaço livre < 15% (diário às 3h)
-10 * * * * /usr/local/sbin/frigate-prune-hd.sh
-
-# Remove clips antigos (diário às 4h)
-20 3 * * * /usr/local/sbin/frigate-retention.sh
-
-# Watchdog do SSD - verifica a cada minuto
-* * * * * /usr/local/sbin/hd-watchdog-min.sh
-
-# Vacuum de emergência (a cada 6 horas)
-*/15 * * * * /usr/local/sbin/frigate-vacuum.sh >> /var/log/frigate/frigate-vacuum.log 2>&1
-EOF
-
-    crontab "$cron_tmp"
-    rm -f "$cron_tmp"
-    echo "Crontab do root atualizado: apenas agendamentos Frigate foram mantidos."
 }
 
 main() {
@@ -73,8 +66,16 @@ main() {
         local name
         name="$(basename "$src")"
 
-        # Não instala arquivos de metadados de controle de versão.
-        if [[ "$name" == ".gitignore" || "$name" == ".git" ]]; then
+        # Não instala metadados, backups e arquivo de cron dedicado.
+        if [[ "$name" == ".gitignore" || "$name" == ".git" || "$name" == "frigate-cron" ]]; then
+            ((++skipped))
+            continue
+        fi
+        if [[ "$name" == .* && "$name" != ".env" ]]; then
+            ((++skipped))
+            continue
+        fi
+        if [[ "$name" == *.bak.* || "$name" == ".env.bak." || "$name" == "changelog.md" || "$name" == "README.md" ]]; then
             ((++skipped))
             continue
         fi
@@ -84,12 +85,14 @@ main() {
         ((++copied))
     done < <(find "$SCRIPT_DIR" -mindepth 1 -maxdepth 1 -type f -print0)
 
-    install_cron
+    install_cron_d
+    clear_root_user_crontab
 
     echo ""
     echo "Concluído: $copied arquivo(s) copiado(s), $skipped ignorado(s)."
     echo "Destino: $DEST_DIR"
     echo "Logs: $LOG_DIR"
+    echo "Cron: $CRON_DEST"
 }
 
 main "$@"

@@ -1,0 +1,16 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+20 3 * * * root /usr/local/sbin/frigate-mover.sh >> /var/log/frigate/frigate-mover.log 2>&1
+
+# Limpa HD quando espaço livre < 15%
+10 * * * * root /usr/local/sbin/frigate-prune-hd.sh
+
+# Remove clips antigos
+20 3 * * * root /usr/local/sbin/frigate-retention.sh
+
+# Watchdog do SSD - verifica a cada minuto
+* * * * * root /usr/local/sbin/hd-watchdog-min.sh
+
+# Vacuum de emergência
+*/15 * * * * root /usr/local/sbin/frigate-vacuum.sh >> /var/log/frigate/frigate-vacuum.log 2>&1

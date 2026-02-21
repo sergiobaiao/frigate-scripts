@@ -1,6 +1,6 @@
 # 📹 Frigate NVR - Scripts de Gerenciamento de Mídia
 
-> VERSION: 1.7
+> VERSION: 1.8
 
 Sistema automatizado para gerenciamento de armazenamento do [Frigate NVR](https://frigate.video/), movendo gravações do SSD (rápido) para HD externo (longo prazo) e gerenciando retenção.
 
@@ -135,23 +135,18 @@ chmod +x *.sh
 
 ## ⏰ Configuração do Cron
 
-Adicione ao crontab (`crontab -e`):
+A partir da versão atual, o agendamento é gerenciado por arquivo dedicado em `/etc/cron.d/frigate-cron`.
 
-```cron
-# Arquiva gravações antigas do SSD para HD (a cada hora)
-0 * * * * /path/to/scripts/frigate-mover.sh --mode=incremental >> /var/log/ssd_to_hd.log 2>&1
+Fluxo:
+- edite `frigate-cron` no repositório;
+- execute `install.sh` como root;
+- o instalador copia para `/etc/cron.d/frigate-cron`;
+- o instalador zera a crontab pessoal do root (passa a valer apenas o cron.d).
 
-# Limpa HD quando espaço livre < 15% (diário às 3h)
-0 3 * * * /path/to/scripts/frigate-prune-hd.sh
+Exemplo de instalação:
 
-# Remove clips antigos (diário às 4h)
-0 4 * * * /path/to/scripts/frigate-retention.sh
-
-# Watchdog do SSD - verifica a cada minuto
-* * * * * /path/to/scripts/hd-watchdog-min.sh
-
-# Vacuum de emergência (a cada 6 horas)
-0 */6 * * * /path/to/scripts/frigate-vacuum.sh >> /var/log/frigate-vacuum.log 2>&1
+```bash
+sudo ./install.sh
 ```
 
 ## 📊 Logs
