@@ -62,6 +62,8 @@ SHOW_PROGRESS="${SHOW_PROGRESS:-0}"
 KEEP_SSD_DAYS="${KEEP_SSD_DAYS:-2}"
 BWLIMIT="${BWLIMIT:-20000}"
 FILE_MIN_AGE_MINUTES="${FILE_MIN_AGE_MINUTES:-20}"
+FILE_MAX_AGE_MINUTES="${FILE_MAX_AGE_MINUTES:-180}"
+FILE_MAX_FILES_PER_RUN="${FILE_MAX_FILES_PER_RUN:-0}"
 MAX_DAYS_PER_RUN="${MAX_DAYS_PER_RUN:-30}"
 
 # Caminhos (resolve symlinks para que find funcione corretamente)
@@ -326,61 +328,91 @@ move_media_older_than_day() {
     local src="$2"
     local dst="$3"
 
-    local moved=0
-    local moved_bytes=0
+    local synced=0
+    local synced_bytes=0
     local total=0
     local total_bytes=0
-    local file rel_path dest_file dest_dir
+    local rel_path abs_path size_b
+    local list_file
     local oldest_date="-"
     local newest_date="-"
+    local min_age max_age max_files
+    local age_desc
+    local max_files_desc=""
+    local -a find_args=()
 
     [[ -d "$src" ]] || {
-        log "$LOG_TAG" "Diretório $label não existe, pulando: $src"
+        log "$LOG_TAG" "Diret?rio $label n?o existe, pulando: $src"
         MOVE_MEDIA_RESULT="0|0"
         return 0
     }
 
-    total=$(find "$src" -type f -mmin +"$FILE_MIN_AGE_MINUTES" -printf . 2>/dev/null | wc -c)
-    total_bytes=$(find "$src" -type f -mmin +"$FILE_MIN_AGE_MINUTES" -printf '%s\n' 2>/dev/null | awk '{sum+=$1} END{print sum+0}')
-    compute_date_range "$src" -mmin +"$FILE_MIN_AGE_MINUTES"
-    oldest_date="$DATE_RANGE_OLDEST"
-    newest_date="$DATE_RANGE_NEWEST"
-    log "$LOG_TAG" "Etapa $label (idade>=${FILE_MIN_AGE_MINUTES}min): candidatos=$total bytes=$(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
+    min_age="${FILE_MIN_AGE_MINUTES:-20}"
+    max_age="${FILE_MAX_AGE_MINUTES:-0}"
+    max_files="${FILE_MAX_FILES_PER_RUN:-0}"
 
-    while IFS= read -r -d '' file; do
-        if [[ ! -f "$file" ]]; then
-            vlog "$label ignorado (arquivo ausente durante varredura): $file"
-            continue
-        fi
-
-        rel_path="${file#$src/}"
-        dest_file="$dst/$rel_path"
-        dest_dir="$(dirname "$dest_file")"
-
-        if [[ "$DRY_RUN" == "1" ]]; then
-            log "$LOG_TAG" "[DRY-RUN] Moveria $label: $rel_path"
-        else
-            local size_b=0
-            size_b="$(stat -c%s "$file" 2>/dev/null || echo 0)"
-            mkdir -p "$dest_dir"
-            chown "${FRIGATE_UID}:${FRIGATE_GID}" "$dest_dir"
-
-            if run_rsync "$label:$rel_path" -a --bwlimit="$BWLIMIT" --chown="${FRIGATE_UID}:${FRIGATE_GID}" \
-                "$file" "$dest_file"; then
-                vlog "$label copiado: $rel_path"
-                ((++moved))
-                moved_bytes=$((moved_bytes + size_b))
-            fi
-        fi
-    done < <(find "$src" -type f -mmin +"$FILE_MIN_AGE_MINUTES" -print0 2>/dev/null || true)
-
-    if [[ "$DRY_RUN" == "1" ]]; then
-        log "$LOG_TAG" "[DRY-RUN] $label (idade>=${FILE_MIN_AGE_MINUTES}min): candidatos=$total bytes=$(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
-    else
-        log "$LOG_TAG" "$label (idade>=${FILE_MIN_AGE_MINUTES}min) concluído: copiados=$moved/$total bytes=$(bytes_human "$moved_bytes") de $(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
+    if ! [[ "$min_age" =~ ^[0-9]+$ && "$max_age" =~ ^[0-9]+$ && "$max_files" =~ ^[0-9]+$ ]]; then
+        log_error "$LOG_TAG" "Config de idade/limite inv?lida para $label: min=$min_age max=$max_age max_files=$max_files"
+        MOVE_MEDIA_RESULT="0|0"
+        return 1
     fi
 
-    MOVE_MEDIA_RESULT="$moved|$moved_bytes"
+    if (( max_age > 0 && max_age <= min_age )); then
+        log_warn "$LOG_TAG" "Janela inv?lida (max<=min), removendo limite superior: min=$min_age max=$max_age"
+        max_age=0
+    fi
+
+    find_args=(-type f -mmin +"$min_age")
+    if (( max_age > 0 )); then
+        find_args+=(-mmin -"$max_age")
+        age_desc="idade>${min_age}min e <${max_age}min"
+    else
+        age_desc="idade>${min_age}min"
+    fi
+    if (( max_files > 0 )); then
+        max_files_desc=" limite=${max_files}"
+    fi
+
+    list_file="$(mktemp)"
+
+    while IFS= read -r -d '' rel_path; do
+        abs_path="$src/$rel_path"
+        [[ -f "$abs_path" ]] || continue
+        if [[ -e "$dst/$rel_path" ]]; then
+            continue
+        fi
+        printf '%s\0' "$rel_path" >>"$list_file"
+        ((++total))
+        size_b="$(stat -c%s "$abs_path" 2>/dev/null || echo 0)"
+        total_bytes=$((total_bytes + size_b))
+        if (( max_files > 0 && total >= max_files )); then
+            break
+        fi
+    done < <(find "$src" "${find_args[@]}" -printf '%P\0' 2>/dev/null | sort -z || true)
+
+    compute_date_range "$src" "${find_args[@]}"
+    oldest_date="$DATE_RANGE_OLDEST"
+    newest_date="$DATE_RANGE_NEWEST"
+    log "$LOG_TAG" "Etapa $label (${age_desc}${max_files_desc}): candidatos=$total bytes=$(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
+
+    if (( total > 0 )) && [[ "$DRY_RUN" != "1" ]]; then
+        if run_rsync "$label:batch" -a --bwlimit="$BWLIMIT" --chown="${FRIGATE_UID}:${FRIGATE_GID}" \
+            --ignore-existing --ignore-missing-args --from0 --files-from="$list_file" \
+            "$src/" "$dst/"; then
+            synced="$total"
+            synced_bytes="$total_bytes"
+        fi
+    fi
+
+    if [[ "$DRY_RUN" == "1" ]]; then
+        log "$LOG_TAG" "[DRY-RUN] $label (${age_desc}${max_files_desc}): candidatos=$total bytes=$(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
+    else
+        log "$LOG_TAG" "$label (${age_desc}${max_files_desc}) conclu?do: sincronizados=$synced/$total bytes=$(bytes_human "$synced_bytes") de $(bytes_human "$total_bytes") datas=${oldest_date}..${newest_date}"
+    fi
+
+    rm -f "$list_file"
+
+    MOVE_MEDIA_RESULT="$synced|$synced_bytes"
     return 0
 }
 
@@ -537,7 +569,16 @@ mode_incremental() {
 # (Lógica do antigo frigate-archiver.sh)
 # -----------------------------------------------------------------------------
 mode_file() {
-    log "$LOG_TAG" "Modo: FILE (copiar arquivos com idade>=${FILE_MIN_AGE_MINUTES}min em recordings/clips/exports/snapshots)"
+    local age_desc
+    age_desc="idade>${FILE_MIN_AGE_MINUTES}min"
+    if [[ "${FILE_MAX_AGE_MINUTES:-0}" =~ ^[0-9]+$ ]] && (( FILE_MAX_AGE_MINUTES > 0 )); then
+        age_desc="${age_desc} e <${FILE_MAX_AGE_MINUTES}min"
+    fi
+    if [[ "${FILE_MAX_FILES_PER_RUN:-0}" =~ ^[0-9]+$ ]] && (( FILE_MAX_FILES_PER_RUN > 0 )); then
+        age_desc="${age_desc}, limite=${FILE_MAX_FILES_PER_RUN} arquivos"
+    fi
+
+    log "$LOG_TAG" "Modo: FILE (copiar arquivos com ${age_desc} em recordings/clips/exports/snapshots)"
 
     local rec_stats clips_stats exports_stats snapshots_stats
     local rec_count clips_count exports_count snapshots_count
@@ -557,7 +598,7 @@ mode_file() {
     IFS='|' read -r exports_count exports_bytes <<< "$exports_stats"
     IFS='|' read -r snapshots_count snapshots_bytes <<< "$snapshots_stats"
 
-    log "$LOG_TAG" "Concluído FILE: recordings=${rec_count}($(bytes_human "${rec_bytes:-0}")) clips=${clips_count}($(bytes_human "${clips_bytes:-0}")) exports=${exports_count}($(bytes_human "${exports_bytes:-0}")) snapshots=${snapshots_count}($(bytes_human "${snapshots_bytes:-0}"))"
+    log "$LOG_TAG" "Conclu?do FILE: recordings=${rec_count}($(bytes_human "${rec_bytes:-0}")) clips=${clips_count}($(bytes_human "${clips_bytes:-0}")) exports=${exports_count}($(bytes_human "${exports_bytes:-0}")) snapshots=${snapshots_count}($(bytes_human "${snapshots_bytes:-0}"))"
 }
 
 # -----------------------------------------------------------------------------

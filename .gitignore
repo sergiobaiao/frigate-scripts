@@ -1,4 +1,7 @@
 .bkp/
 *.bak.*
+.bak.*
 .env.bak.
 .runtime/*.log
+*.log
+*.log.*

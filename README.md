@@ -14,6 +14,7 @@ scripts/
 ├── README.md               # Esta documentação
 │
 ├── frigate-mover.sh        # 🆕 Script unificado de movimentação
+├── frigate-reconcile-gaps.sh # Reconciliador de gaps SSD -> HD
 ├── mover_frigate_para_hd.sh # Wrapper legado para --mode=full
 │
 ├── frigate-prune-hd.sh     # Limpa HD quando espaço baixo
@@ -25,6 +26,8 @@ scripts/
 ├── frigate-logrotate.sh    # 🆕 Rotação manual de logs
 ├── logrotate.conf          # 🆕 Config para logrotate do sistema
 ├── hd-watchdog-min.sh      # Monitora SSD e aciona mover
+├── ha-localtime-view.sh    # Gera árvore localtime para media browser HA
+├── ha-localtime-view.cron  # Template cron para ha-localtime-view.sh
 └── reset-usb.sh            # Reseta HD USB travado
 ```
 
@@ -37,16 +40,16 @@ O `frigate-mover.sh` consolida toda a funcionalidade de movimentação em um ún
 | Modo | Descrição | Uso Típico |
 |------|-----------|------------|
 | `--mode=incremental` | Move por diretório de data (> N dias) | Cron a cada hora |
-| `--mode=file` | Move por arquivo individual (> 24h) | Quando precisa granularidade |
+| `--mode=file` | Copia por idade configurável (`FILE_MIN_AGE_MINUTES`) | Execução frequente e incremental |
 | `--mode=full` | Move TUDO com limite de banda | Manutenção programada |
 | `--mode=emergency` | Move TUDO sem limite de banda | Emergência de espaço |
 
 ### Opções
 
 ```bash
-./frigate-mover.sh --mode=incremental     # Modo padrão
+./frigate-mover.sh --mode=file            # Modo padrão
 ./frigate-mover.sh --mode=full --dry-run  # Simula sem executar
-./frigate-mover.sh --mode=incremental -v  # Verbose
+./frigate-mover.sh --mode=file -v         # Verbose
 ./frigate-mover.sh --status               # Mostra estatísticas
 ./frigate-mover.sh --help                 # Ajuda completa
 ```
@@ -92,7 +95,15 @@ HD_USAGE_THRESHOLD=90   # % máximo de uso do HD
 SSD_EMERGENCY_THRESHOLD=85  # % que dispara emergência
 
 # Performance
-BWLIMIT=20000           # Limite de banda KB/s (20MB/s)
+BWLIMIT=8000            # Limite de banda KB/s
+FILE_MIN_AGE_MINUTES=20 # Idade mínima para mover no mode=file
+FILE_MAX_AGE_MINUTES=180 # (Opcional) Janela máxima de idade
+FILE_MAX_FILES_PER_RUN=1200 # (Opcional) Limite de arquivos por execução
+
+# Watchdog (opcional)
+WATCHDOG_COOLDOWN_MINUTES=15
+WATCHDOG_MODE=file
+WATCHDOG_USE_EMERGENCY=0
 
 # Logs/alertas
 LOG_MOVER="/var/log/ssd_to_hd.log"
@@ -115,7 +126,8 @@ chmod +x *.sh
 | Script | Descrição | Quando Usar |
 |--------|-----------|-------------|
 | `frigate-mover.sh --mode=incremental` | Move diretórios de data inteiros do SSD para HD | Recomendado para uso diário |
-| `frigate-mover.sh --mode=file` | Move arquivos individuais mais antigos que 24h | Quando precisa de granularidade |
+| `frigate-mover.sh --mode=file` | Copia arquivos por janela de idade (min/max em minutos) | Execução frequente e incremental |
+| `frigate-reconcile-gaps.sh` | Repara faltas no HD comparando diretórios SSD/HD | Consistência pós-migração |
 | `mover_frigate_para_hd.sh` | Move TUDO do SSD para HD de uma vez | Emergências ou manutenção |
 
 ### Scripts de Limpeza
@@ -130,23 +142,25 @@ chmod +x *.sh
 
 | Script | Descrição |
 |--------|-----------|
-| `hd-watchdog-min.sh` | Monitora SSD e aciona movimentação se > 85% |
+| `hd-watchdog-min.sh` | Monitora SSD, respeita cooldown e aciona modo configurável |
+| `ha-localtime-view.sh` | Cria visão por horário local para o Home Assistant via symlink |
 | `reset-usb.sh` | Reseta dispositivo USB travado |
 
 ## ⏰ Configuração do Cron
 
-A partir da versão atual, o agendamento é gerenciado por arquivo dedicado em `/etc/cron.d/frigate-cron`.
+Existem dois modelos de agendamento no repositório:
+- `frigate-cron`: agenda principal de manutenção/migração
+- `ha-localtime-view.cron`: agenda para geração da árvore localtime do HA
 
-Fluxo:
-- edite `frigate-cron` no repositório;
-- execute `install.sh` como root;
-- o instalador copia para `/etc/cron.d/frigate-cron`;
-- o instalador zera a crontab pessoal do root (passa a valer apenas o cron.d).
+Exemplo (crontab root):
 
-Exemplo de instalação:
-
-```bash
-sudo ./install.sh
+```cron
+* * * * * /usr/local/sbin/hd-watchdog-min.sh
+*/5 * * * * FILE_MIN_AGE_MINUTES=20 FILE_MAX_AGE_MINUTES=120 FILE_MAX_FILES_PER_RUN=1200 timeout 20m /usr/local/sbin/frigate-mover.sh --mode=file
+17 */2 * * * FILE_MIN_AGE_MINUTES=120 FILE_MAX_AGE_MINUTES=0 FILE_MAX_FILES_PER_RUN=4000 timeout 25m /usr/local/sbin/frigate-mover.sh --mode=file
+11,31,51 * * * * RECONCILE_MIN_AGE_MINUTES=90 RECONCILE_MAX_DIRS_PER_RUN=80 timeout 20m /usr/local/sbin/frigate-reconcile-gaps.sh
+23 */2 * * * /usr/local/sbin/frigate-vacuum.sh
+43 */4 * * * /usr/local/sbin/frigate-prune-hd.sh
 ```
 
 ## 📊 Logs

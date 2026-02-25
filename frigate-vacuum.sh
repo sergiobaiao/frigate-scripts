@@ -47,7 +47,7 @@ setup_logging "$LOG_FILE" "$MIRROR_STDOUT"
 setup_error_trap
 
 # Lock compartilhado com operações de mídia para evitar concorrência.
-LOCK_FILE="${LOCK_MEDIA:-/tmp/frigate-media.lock}"
+LOCK_FILE="${LOCK_STORAGE:-${LOCK_MEDIA:-/tmp/frigate-media.lock}}"
 if ! mkdir -p "$(dirname "$LOCK_FILE")" 2>/dev/null || ! (: >>"$LOCK_FILE") 2>/dev/null; then
     LOCK_FILE="${SCRIPT_DIR}/.runtime/frigate-media.lock"
     mkdir -p "$(dirname "$LOCK_FILE")"
@@ -86,15 +86,31 @@ usage_pct() {
 # CONFIGURAÇÃO DOS DIRETÓRIOS DE MÍDIA
 # -----------------------------------------------------------------------------
 DATE_RE='^20[0-9]{2}-[0-9]{2}-[0-9]{2}$'
+HOUR_RE='^([01][0-9]|2[0-3])$'
 
-date_dirs_for_media() {
+hour_dirs_for_media() {
     local root="$1"
     local media="$2"
+    local day_path day hour_path hour emitted
     [[ -d "$root" ]] || return 0
 
-    find "$root" -mindepth 1 -maxdepth 2 -type d -printf '%p\n' 2>/dev/null \
-        | awk -F/ -v re="$DATE_RE" -v media="$media" '$NF ~ re {printf "%s\t%s\t%s\n", $NF, media, $0}' \
-        | sort
+    while IFS= read -r day_path; do
+        day="${day_path##*/}"
+        [[ "$day" =~ $DATE_RE ]] || continue
+
+        emitted=0
+        while IFS= read -r hour_path; do
+            hour="${hour_path##*/}"
+            [[ "$hour" =~ $HOUR_RE ]] || continue
+            printf '%s/%s\t%s\t%s\n' "$day" "$hour" "$media" "$hour_path"
+            emitted=1
+        done < <(find "$day_path" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sort || true)
+
+        # Fallback para layouts sem subpastas por hora.
+        if (( emitted == 0 )); then
+            printf '%s/99\t%s\t%s\n' "$day" "$media" "$day_path"
+        fi
+    done < <(find "$root" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sort || true)
 }
 
 # -----------------------------------------------------------------------------
@@ -105,35 +121,35 @@ log_simple "$LOG_TAG" "Uso atual: ${current_usage}% (limite: ${THRESHOLD}%)"
 
 removed_count=0
 freed_bytes=0
-removed_days=()
+removed_slots=()
 
 # -----------------------------------------------------------------------------
 # LOOP DE LIMPEZA
 # -----------------------------------------------------------------------------
-# Continua removendo dias antigos enquanto o uso estiver acima do threshold
+# Continua removendo a faixa mais antiga (YYYY-MM-DD/HH) enquanto acima do threshold.
 while [[ "$(usage_pct)" -ge "$THRESHOLD" ]]; do
     oldest_entry="$(
         {
-            date_dirs_for_media "$HD_RECORDINGS" "recordings"
-            date_dirs_for_media "$HD_CLIPS" "clips"
-            date_dirs_for_media "$HD_EXPORTS" "exports"
-            date_dirs_for_media "$HD_SNAPSHOTS" "snapshots"
-        } | sort | head -n1
+            hour_dirs_for_media "$HD_RECORDINGS" "recordings"
+            hour_dirs_for_media "$HD_CLIPS" "clips"
+            hour_dirs_for_media "$HD_EXPORTS" "exports"
+            hour_dirs_for_media "$HD_SNAPSHOTS" "snapshots"
+        } | sort | sed -n '1p'
     )"
 
     if [[ -z "$oldest_entry" ]]; then
-        log_simple "$LOG_TAG" "Nenhum diretório de data encontrado para remover (recordings/clips/exports/snapshots)"
+        log_simple "$LOG_TAG" "Nenhuma faixa de data/hora encontrada para remover (recordings/clips/exports/snapshots)"
         break
     fi
 
-    IFS=$'\t' read -r day media oldest_path <<< "$oldest_entry"
+    IFS=$'\t' read -r slot media oldest_path <<< "$oldest_entry"
     size_b="$(du -sb "$oldest_path" 2>/dev/null | awk '{print $1}')"
     size_b="${size_b:-0}"
-    log "$LOG_TAG" "Removendo dia: $day ($media) em $oldest_path (tamanho=$(bytes_human "$size_b"))"
+    log "$LOG_TAG" "Removendo faixa: $slot ($media) em $oldest_path (tamanho=$(bytes_human "$size_b"))"
     if rm -rf "$oldest_path"; then
         ((removed_count++))
         freed_bytes=$((freed_bytes + size_b))
-        removed_days+=("$day")
+        removed_slots+=("$slot")
     else
         log_error "$LOG_TAG" "Falha ao remover $oldest_path"
         notify_error "$LOG_TAG" "Falha ao remover $oldest_path"
@@ -145,10 +161,10 @@ while [[ "$(usage_pct)" -ge "$THRESHOLD" ]]; do
     log "$LOG_TAG" "Uso após remoção: ${new_usage}%"
 done
 
-if (( ${#removed_days[@]} > 0 )); then
-    removed_days_summary="$(printf '%s\n' "${removed_days[@]}" | sort -u | paste -sd, -)"
+if (( ${#removed_slots[@]} > 0 )); then
+    removed_slots_summary="$(printf '%s\n' "${removed_slots[@]}" | sort -u | paste -sd, -)"
 else
-    removed_days_summary="nenhuma"
+    removed_slots_summary="nenhuma"
 fi
 
 final_usage=$(usage_pct)
@@ -157,4 +173,4 @@ if [[ "$final_usage" -ge "$THRESHOLD" ]]; then
     notify_error "$LOG_TAG" "Vacuum finalizado acima do limite: ${final_usage}%"
 fi
 
-log "$LOG_TAG" "Vacuum concluído: removidos=$removed_count bytes_liberados=$(bytes_human "$freed_bytes") dias=$removed_days_summary uso_final=${final_usage}%"
+log "$LOG_TAG" "Vacuum concluído: removidos=$removed_count bytes_liberados=$(bytes_human "$freed_bytes") faixas=$removed_slots_summary uso_final=${final_usage}%"

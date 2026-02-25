@@ -1,7 +1,7 @@
 # Changelog
 
 Este arquivo consolida todas as alteracoes aplicadas nesta sessao de trabalho.
-Periodo reconstruido: **2026-02-15 a 2026-02-19**.
+Periodo reconstruido: **2026-02-15 a 2026-02-25**.
 Formato baseado em **Keep a Changelog**, adaptado para portugues.
 
 Regra adotada:
@@ -12,35 +12,6 @@ Regra adotada:
 ## [Nao lancado]
 ### Alterado
 - Nenhuma alteracao pendente.
-
-## [1.8] - 2026-02-21
-### Adicionado
-- Arquivo `frigate-cron` com os agendamentos oficiais para instalacao em `/etc/cron.d/frigate-cron`.
-- Arquivo `.gitignore` com exclusao de backups e pasta de seguranca local:
-  - `.bkp/`
-  - `*.bak.*`
-  - `.env.bak.`
-
-### Alterado
-- `install.sh`:
-  - migrou de gerenciamento via `crontab -e` para instalacao de `/etc/cron.d/frigate-cron`;
-  - agora limpa (zera) a crontab pessoal do root apos backup;
-  - copia o cron dedicado para `/etc/cron.d/frigate-cron` com permissoes corretas;
-  - ignora arquivos de backup/documentacao durante copia para `/usr/local/sbin`.
-- `README.md`: documentacao de cron atualizada para modelo `/etc/cron.d`.
-
-### Analise (comparativo com backups `.bak.20260221111447`)
-- `frigate-mover.sh`:
-  - modo `file` mudou de `>24h` para `FILE_MIN_AGE_MINUTES` (padrao 20 min);
-  - limite de banda (`BWLIMIT`) aplicado tambem nos modos `file` e `incremental`;
-  - reforco de robustez para arquivos removidos durante varredura (`arquivo ausente`).
-- `.env`:
-  - `BWLIMIT` reduzido de `20000` para `8000`;
-  - adicionadas variaveis `FILE_MIN_AGE_MINUTES`, `WATCHDOG_COOLDOWN_MINUTES`, `WATCHDOG_MODE`, `WATCHDOG_USE_EMERGENCY`.
-- `hd-watchdog-min.sh`:
-  - adicionados cooldown de execucao, arquivo de estado em `.runtime/watchdog.last` e modo configuravel (`file|incremental|full|emergency`).
-- `common.sh`:
-  - ajuste em `collect_path_stats` para coleta de datas sem `head/tail`, com menor risco sob `pipefail`.
 
 ## [0.1] - 2026-02-15
 ### Adicionado
@@ -185,9 +156,42 @@ Regra adotada:
 - `README.md` atualizado para `VERSION 1.7`.
 - `.env` e todos os scripts versionados atualizados para `VERSION 1.7`.
 
+## [1.8] - 2026-02-25
+### Alterado
+- Sincronizacao global de versao para `1.8` em todos os arquivos versionados (incluindo novos scripts e templates de cron).
+- `frigate-mover.sh`:
+  - `mode=file` passou a usar janela de idade por minutos (`FILE_MIN_AGE_MINUTES`, `FILE_MAX_AGE_MINUTES`) e limite por execução (`FILE_MAX_FILES_PER_RUN`);
+  - aplicação de `--bwlimit` também no fluxo `file`/`incremental`;
+  - sincronização em lote com `--files-from` e `--ignore-existing`;
+  - robustez para corrida de arquivos durante varredura (arquivos ausentes no meio da execução).
+- `hd-watchdog-min.sh`:
+  - adição de cooldown (`WATCHDOG_COOLDOWN_MINUTES`);
+  - adição de modo configurável (`WATCHDOG_MODE`) e override de emergência (`WATCHDOG_USE_EMERGENCY`);
+  - persistência de estado em `.runtime/watchdog.last`.
+- `frigate-prune-hd.sh`:
+  - limpeza automática passou a operar por faixa `YYYY-MM-DD/HH` quando houver estrutura por hora;
+  - lock alinhado para usar `LOCK_STORAGE` como prioridade.
+- `frigate-vacuum.sh`:
+  - remoção por faixa `YYYY-MM-DD/HH` (com fallback para layouts sem subpastas de hora);
+  - lock alinhado para usar `LOCK_STORAGE` como prioridade.
+- `common.sh`:
+  - `collect_path_stats` alterado para coleta de datas sem `head/tail`, reduzindo fragilidade com `pipefail`.
+- `README.md`:
+  - atualizado para refletir o comportamento atual do `frigate-mover.sh`;
+  - adicionada documentação de `frigate-reconcile-gaps.sh`, `ha-localtime-view.sh` e templates de cron atuais.
+- `.gitignore`:
+  - reforco para ignorar backups offline e artefatos locais (`.bkp/`, `*.bak.*`, `.bak.*`, `.env.bak.`, `*.log`, `*.log.*`).
+
+### Adicionado
+- Novos arquivos operacionais detectados e documentados:
+  - `frigate-reconcile-gaps.sh`
+  - `ha-localtime-view.sh`
+  - `ha-localtime-view.cron`
+  - `frigate-cron`
+
 ---
 
-## Estado atual de versoes (2026-02-21)
+## Estado atual de versoes (2026-02-25)
 - `README.md`: 1.8
 - `common.sh`: 1.8
 - `frigate-mover.sh`: 1.8
@@ -205,3 +209,7 @@ Regra adotada:
 - `list_files_by_date.sh`: 1.8
 - `mover_frigate_para_hd.sh`: 1.8
 - `.env`: 1.8
+- `frigate-cron`: 1.8
+- `frigate-reconcile-gaps.sh`: 1.8
+- `ha-localtime-view.sh`: 1.8
+- `ha-localtime-view.cron`: 1.8

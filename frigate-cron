@@ -1,16 +1,28 @@
 SHELL=/bin/bash
+# VERSION: 1.8
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-20 3 * * * root /usr/local/sbin/frigate-mover.sh >> /var/log/frigate/frigate-mover.log 2>&1
+# Frigate mover r?pido: janela curta para evitar lock longo (SSD -> HD)
 
-# Limpa HD quando espaço livre < 15%
-10 * * * * root /usr/local/sbin/frigate-prune-hd.sh
+# Backfill gradual: drena arquivos mais antigos sem travar USB-SATA
 
-# Remove clips antigos
-20 3 * * * root /usr/local/sbin/frigate-retention.sh
-
-# Watchdog do SSD - verifica a cada minuto
+# Watchdog: monitoramento de press?o no SSD
 * * * * * root /usr/local/sbin/hd-watchdog-min.sh
 
-# Vacuum de emergência
-*/15 * * * * root /usr/local/sbin/frigate-vacuum.sh >> /var/log/frigate/frigate-vacuum.log 2>&1
+# Manuten??o frequente para evitar lota??o do HD
+40 3 * * * root /usr/local/sbin/frigate-retention.sh
+
+# Reconciliador de gaps: garante consist?ncia SSD->HD para horas antigas
+
+# Frigate mover rapido: janela curta para evitar lock longo (SSD -> HD)
+*/5 * * * * root FILE_MIN_AGE_MINUTES=20 FILE_MAX_AGE_MINUTES=120 FILE_MAX_FILES_PER_RUN=1200 timeout 20m /usr/local/sbin/frigate-mover.sh --mode=file
+
+# Backfill gradual: drena arquivos mais antigos sem travar USB-SATA
+17 */2 * * * root FILE_MIN_AGE_MINUTES=120 FILE_MAX_AGE_MINUTES=0 FILE_MAX_FILES_PER_RUN=4000 timeout 25m /usr/local/sbin/frigate-mover.sh --mode=file
+
+# Reconciliador de gaps: garante consistencia SSD->HD para horas antigas
+11,31,51 * * * * root RECONCILE_MIN_AGE_MINUTES=90 RECONCILE_MAX_DIRS_PER_RUN=80 timeout 20m /usr/local/sbin/frigate-reconcile-gaps.sh
+
+# Manutencao espaciada para reduzir contencao de lock
+23 */2 * * * root /usr/local/sbin/frigate-vacuum.sh
+43 */4 * * * root /usr/local/sbin/frigate-prune-hd.sh

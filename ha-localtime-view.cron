@@ -1,0 +1,6 @@
+SHELL=/bin/bash
+# VERSION: 1.8
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Build HA-friendly local-time view from HD recordings without rewriting media
+*/5 * * * * root SOURCE_ROOT=/mnt/hdexterno/frigate/recordings DEST_ROOT=/mnt/hdexterno/ha_recordings_local TZ_LOCAL=America/Fortaleza /usr/local/sbin/ha-localtime-view.sh --clean-stale --max-days 10

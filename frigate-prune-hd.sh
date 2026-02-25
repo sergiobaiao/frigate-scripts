@@ -45,6 +45,7 @@ MANUAL_ROOT=""
 
 # Expressão regular para validar diretórios de data
 DATE_RE='^20[0-9]{2}-[0-9]{2}-[0-9]{2}$'
+HOUR_RE='^([01][0-9]|2[0-3])$'
 
 show_help() {
     cat <<EOF
@@ -114,7 +115,7 @@ fi
 # CONFIGURAÇÃO DE LOGS
 # -----------------------------------------------------------------------------
 # Resolve arquivo de lock com fallback para /tmp quando necessário
-LOCK_FILE="${LOCK_MEDIA:-/tmp/frigate-media.lock}"
+LOCK_FILE="${LOCK_STORAGE:-${LOCK_MEDIA:-/tmp/frigate-media.lock}}"
 if ! mkdir -p "$(dirname "$LOCK_FILE")" 2>/dev/null || ! (: >>"$LOCK_FILE") 2>/dev/null; then
     LOCK_FILE="${SCRIPT_DIR}/.runtime/frigate-media.lock"
     mkdir -p "$(dirname "$LOCK_FILE")"
@@ -159,12 +160,41 @@ mount_free_bytes() {
 date_dirs_for_media() {
     local root="$1"
     local media="$2"
+    local path day
 
     [[ -d "$root" ]] || return 0
 
-    find "$root" -mindepth 1 -maxdepth 2 -type d -printf "%p\n" 2>/dev/null \
-        | awk -F/ -v re="$DATE_RE" -v media="$media" '$NF ~ re {printf "%s\t%s\t%s\n", $NF, media, $0}' \
-        | sort
+    while IFS= read -r path; do
+        day="${path##*/}"
+        [[ "$day" =~ $DATE_RE ]] || continue
+        printf '%s\t%s\t%s\n' "$day" "$media" "$path"
+    done < <(find "$root" -mindepth 1 -maxdepth 2 -type d -print 2>/dev/null || true)
+}
+
+hour_dirs_for_media() {
+    local root="$1"
+    local media="$2"
+    local day_path day hour_path hour emitted
+
+    [[ -d "$root" ]] || return 0
+
+    while IFS= read -r day_path; do
+        day="${day_path##*/}"
+        [[ "$day" =~ $DATE_RE ]] || continue
+
+        emitted=0
+        while IFS= read -r hour_path; do
+            hour="${hour_path##*/}"
+            [[ "$hour" =~ $HOUR_RE ]] || continue
+            printf '%s/%s\t%s\t%s\n' "$day" "$hour" "$media" "$hour_path"
+            emitted=1
+        done < <(find "$day_path" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sort || true)
+
+        # Fallback para layouts sem subpastas por hora.
+        if (( emitted == 0 )); then
+            printf '%s/99\t%s\t%s\n' "$day" "$media" "$day_path"
+        fi
+    done < <(find "$root" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sort || true)
 }
 
 # -----------------------------------------------------------------------------
@@ -184,8 +214,8 @@ if [[ ! -d "$HD_RECORDINGS" ]]; then
     fi
 fi
 
-# Coleta candidatos de recordings, clips, exports e snapshots
-mapfile -t candidates < <(
+# Coleta candidatos de data para o modo manual (--before-date)
+mapfile -t date_candidates < <(
     {
         date_dirs_for_media "$HD_RECORDINGS" "recordings"
         date_dirs_for_media "$HD_CLIPS" "clips"
@@ -194,7 +224,7 @@ mapfile -t candidates < <(
     } | sort
 )
 
-if (( ${#candidates[@]} == 0 )); then
+if (( ${#date_candidates[@]} == 0 )); then
     log "$LOG_TAG" "Nenhum diretório de data encontrado em recordings/clips/exports/snapshots no HD"
     exit 0
 fi
@@ -215,13 +245,13 @@ if [[ -n "$MANUAL_BEFORE_DATE" ]]; then
         log "$LOG_TAG" "Critério manual: remove apenas diretórios de data (YYYY-MM-DD) em recordings/clips/exports/snapshots no HD"
 
         older_candidates=0
-        for entry in "${candidates[@]}"; do
+        for entry in "${date_candidates[@]}"; do
             IFS=$'\t' read -r day _media _path <<< "$entry"
             [[ "$day" < "$MANUAL_BEFORE_DATE" ]] && ((++older_candidates))
         done
         log "$LOG_TAG" "Candidatos com data < $MANUAL_BEFORE_DATE: $older_candidates"
 
-        for entry in "${candidates[@]}"; do
+        for entry in "${date_candidates[@]}"; do
             IFS=$'\t' read -r day media path <<< "$entry"
 
             [[ "$day" < "$MANUAL_BEFORE_DATE" ]] || continue
@@ -346,6 +376,21 @@ if [[ -n "$MANUAL_BEFORE_DATE" ]]; then
     exit 0
 fi
 
+# Coleta candidatos por faixa de hora para o fluxo automático.
+mapfile -t candidates < <(
+    {
+        hour_dirs_for_media "$HD_RECORDINGS" "recordings"
+        hour_dirs_for_media "$HD_CLIPS" "clips"
+        hour_dirs_for_media "$HD_EXPORTS" "exports"
+        hour_dirs_for_media "$HD_SNAPSHOTS" "snapshots"
+    } | sort
+)
+
+if (( ${#candidates[@]} == 0 )); then
+    log "$LOG_TAG" "Nenhuma faixa de data/hora encontrada em recordings/clips/exports/snapshots no HD"
+    exit 0
+fi
+
 # Obtém a porcentagem atual de espaço livre
 free="$(free_pct)"
 log "$LOG_TAG" "Espaço livre: ${free}% (mínimo: ${MIN_FREE_PCT}%)"
@@ -362,7 +407,7 @@ fi
 # -----------------------------------------------------------------------------
 # LOOP DE LIMPEZA
 # -----------------------------------------------------------------------------
-# Continua removendo dias antigos até atingir o espaço livre mínimo
+# Continua removendo a faixa mais antiga (YYYY-MM-DD/HH) até atingir o espaço livre mínimo.
 if [[ "$DRY_RUN" == "1" ]]; then
     total_b="$(mount_total_bytes)"
     free_b="$(mount_free_bytes)"
@@ -407,7 +452,7 @@ else
         size_b="$(du -sb "$oldest" 2>/dev/null | awk '{print $1}')"
         size_b="${size_b:-0}"
 
-        log "$LOG_TAG" "Removendo ($media): $oldest (tamanho=$(bytes_human "$size_b"))"
+        log "$LOG_TAG" "Removendo faixa ($media): $day -> $oldest (tamanho=$(bytes_human "$size_b"))"
         if rm -rf "$oldest"; then
             freed_bytes=$((freed_bytes + size_b))
         else
